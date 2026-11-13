@@ -708,3 +708,25 @@ this does nothing i guess
 ```
 **Cause:** the What-if card did change the forecast, but only in the forecast card far above it, and only after a stop with a registered bus route was picked. Nothing visible happened inside the card itself.
 **Fix:** the card now shows its own result, comparing live conditions today with the chosen conditions. For example: *"Puttur – Mangaluru 8:22: 25% → 48% chance of delay with heavy rain (+23 points). Reasons: rain."*, and with next Monday, *"25% → 56% … rain + Monday rush"*. Without a stop or a nearby route, it says exactly what's missing.
+
+### Prompt 18 (exact text, with a screenshot of "hi" getting the "Best bus" reply)
+```
+it is telling same for all the prompts
+```
+**Cause:** Claude can't answer yet (the Anthropic account has no credit), so the **on-device assistant** replied. It only knew 4 question types, and everything else, even "hi", got the same "Best bus" answer.
+**Fix:** the on-device assistant now handles:
+- greetings (by name) and "what can you do";
+- thanks;
+- weather and rain (live Open-Meteo);
+- alerts and crisis status;
+- travel groups;
+- crowding;
+- whether my bus is running;
+- when to leave;
+- best bus with a backup;
+- delay risk with reasons;
+- "what if it doesn't come";
+- route reliability.
+
+Anything else gets a help list instead of a wrong answer.
+**Tested** (B C Road, starter routes): each of `hi`, `which bus should I take?`, `why is my bus risky?`, `when should I leave?`, `is my bus running?`, `what if my bus doesnt come?`, `which route is least reliable?` and `tell me a joke` got a different, matching answer.

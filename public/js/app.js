@@ -544,17 +544,35 @@
       verifiedOperators: DB.operators.map(({ id, ...o }) => o), activeAlerts: (DB.alerts || []).slice(0, 5).map((a) => a.text),
     };
   }
+  // on-device assistant: answers from live app data by question type (used when Claude isn't available)
   function localAnswer(q) {
-    q = q.toLowerCase(); const p = P.profile.stop; const o = rankOptions(p); const my = ROWS[P.profile.tripId];
-    if (!p) return "Set your bus stop in Route Finder first.";
+    q = q.toLowerCase().trim(); const p = P.profile.stop; const o = rankOptions(p); const my = ROWS[P.profile.tripId];
+    const name = ME && ME.name ? ME.name.split(" ")[0] : "";
+    const HELP = `I can answer from live RouteLess data. Try:\n• "Which bus should I take?"\n• "Why is my bus risky?" / "Will it rain?"\n• "What if my bus doesn't come?"\n• "Is my bus running?" / "How crowded is it?"\n• "When should I leave?"\n• "Which route is least reliable?"\n• "Any alerts?" / "Who is in my travel group?"`;
+    if (/^(hi+|hello|hey|hai|namaskara|namaste|good (morning|afternoon|evening))\b/.test(q)) return `Hi${name ? " " + name : ""}! 👋 ` + (p ? `Your stop is ${p.name}. ` : "Set your bus stop in Route Finder first. ") + HELP;
+    if (/help|what can you|how do i use|options/.test(q)) return HELP;
+    if (/thank|thanks|ok\b|okay|great|cool/.test(q)) return "You're welcome! Safe travels 🚌 Tap ✋ Report after your ride so others know if the bus came.";
+    if (/rain|weather|forecast|temperature|hot|cold/.test(q)) return weather.ok ? `Live weather for your area (Open-Meteo): ${weather.prob}% chance of rain between 6 and 9 am, ${Math.round(weather.temp)}°C now.${weather.prob >= 50 ? " Rain raises bus delays, so leave earlier or pick the AI's backup option." : " Rain shouldn't slow buses much this morning."}` : "The live weather forecast isn't available right now.";
+    if (/alert|emergenc|crisis|news|update/.test(q)) {
+      const a = (DB.alerts || []).slice(0, 3);
+      return (PLAN ? `🚨 A crisis plan is active (${decidedBy()}). ` : "") + (a.length ? "Latest alerts:\n" + a.map((x) => "• " + x.text).join("\n") : "No alerts in the last 3 days.");
+    }
+    const busQ = /bus|route|take|best|which|suggest|recommend|risk|late|delay|chance|why|doesn|not come|didn|alternat|backup|miss|cancel|group|pod|share|crowd|full|seat|running|status|coming|on time|leave|when|reach|arrive|reliab|worst|least|score|stop|college|go\b/;
+    if (!busQ.test(q)) return "I'm the on-device assistant, so I only understand bus and commute questions.\n\n" + HELP;
+    if (!p) return "Set your bus stop in Route Finder first, then I can tell you which bus to take, its delay risk and your backups.\n\n" + HELP;
     if (!o.length) return `No registered bus passes ${p.name} yet. Open Google Maps transit for all known buses: ${gmaps(p)}`;
+    if (/group|pod|friends|share|auto with/.test(q) && my) { const pods = RL.groupRiders(my.trip.id, DB.riders); return pods.length ? `${pods.reduce((s, g) => s + g.members.length, 0)} registered students ride ${my.route.code} ${my.trip.time}, in ${pods.length} pod(s) of up to 4. See the 👥 Groups tab to share an auto if the bus fails.` : `Nobody else has registered on ${my.route.code} ${my.trip.time} yet. Tap "I ride this bus" in Route Finder to start a travel group.`; }
+    if (/crowd|full|seat|rush|space/.test(q) && my) return my.registered ? `${my.route.code} ${my.trip.time}: about ${my.demand} riders expected for ${my.capacity} seats (${Math.round((100 * my.demand) / my.capacity)}% full)${my.demand > my.capacity ? ", so it may be too full. Consider the earlier bus." : "."}` : `No riders have registered on ${my.route.code} ${my.trip.time} yet, so I can't estimate crowding.`;
+    if (/running|status|coming|on time|where is|live/.test(q) && my) return `${my.route.code} ${my.trip.time}: status ${my.status.s} (${my.status.src}). Delay risk ${pct(my.pred.p)}%.`;
+    if (/when|leave|start|time|reach|arrive/.test(q) && my) { const leave = depAt(my.trip, p) - 10; return `Your ${my.route.code} leaves ${p.name} at ${RL.fmt(depAt(my.trip, p))} and reaches college around ${RL.fmt(arrAt(my.trip))}. Be at the stop by ${RL.fmt(leave)}.${my.pred.p >= 0.5 ? ` Delay risk is high (${pct(my.pred.p)}%), so consider ${o[0].t.id !== my.trip.id ? `${o[0].row.route.code} at ${RL.fmt(o[0].dep)}` : "a backup in Alternatives"}.` : ""}`; }
     if (/reliab|worst|least|score/.test(q)) {
       const r = RL.ROUTES.map((x) => ({ x, ...RL.reliability(DB.reports, x.id) })).filter((x) => x.score != null).sort((a, b) => a.score - b.score);
       return r.length ? "Route reliability (last 30 days, real reports):\n" + r.map((x) => `• ${x.x.code}: ${x.score}/100 (${x.grade}) from ${x.reports} reports`).join("\n") : "No reports yet, so no reliability scores.";
     }
     if (/doesn|not come|didn|alternat|backup|miss|cancel/.test(q)) return `If your bus doesn't come:\n1. Next registered bus: ${o.filter((x) => x.t.id !== P.profile.tripId).slice(0, 2).map((x) => `${x.row.route.code} at ${RL.fmt(x.dep)} (${pct(x.row.pred.p)}% risk)`).join(", ") || "none"}\n2. Verified operators: ${DB.operators.map((x) => `${x.type} ${x.name} ${x.phone}`).join("; ") || "none added yet"}\n3. All buses on Google Maps: ${gmaps(p)}\n4. Tap "Didn't come" in Report so others are warned.`;
-    if (/why|risk|late|chance/.test(q) && my) return `${pct(my.pred.p)}% chance your ${my.route.code} is late or cancelled — ${RL.reasonText(my.pred)}. Based on ${my.pred.evidence} real reports.`;
-    return `Best bus: ${o[0].row.route.code} at ${RL.fmt(o[0].dep)} from ${p.name}, reaching college ${RL.fmt(o[0].arr)} — ${pct(o[0].row.pred.p)}% risk (${RL.reasonText(o[0].row.pred)}).`;
+    if (/why|risk|late|chance|delay/.test(q) && my) return `${pct(my.pred.p)}% chance your ${my.route.code} is late or cancelled — ${RL.reasonText(my.pred)}. Based on ${my.pred.evidence} real reports.`;
+    if (/which|best|take|bus|route|suggest|recommend|go/.test(q)) return `Best bus: ${o[0].row.route.code} at ${RL.fmt(o[0].dep)} from ${p.name}, reaching college ${RL.fmt(o[0].arr)} — ${pct(o[0].row.pred.p)}% risk (${RL.reasonText(o[0].row.pred)}).` + (o[1] ? `\nBackup: ${o[1].row.route.code} at ${RL.fmt(o[1].dep)} (${pct(o[1].row.pred.p)}% risk).` : "");
+    return `I'm the on-device assistant, so I only understand bus questions.\n\n` + HELP;
   }
   let aiAvailable = null; // checked once, so a server without a key never produces failing requests
   async function aiReady() {
