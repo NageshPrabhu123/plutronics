@@ -3,7 +3,10 @@
 // modes: chat (student Q&A), letter (evidence letter to KSRTC), discover (find REAL bus services with web search)
 import Anthropic from "@anthropic-ai/sdk";
 import { readJson, send } from "./_store.js";
-import { checkCrisisPlan } from "./_crisisCheck.js";
+import { checkCrisisPlan, mergeWithGreedy } from "./_crisisCheck.js";
+
+// Vercel functions here may run at most 60 s (vercel.json). Claude's crisis decision gets 50 s, then we fall back.
+const CRISIS_TIMEOUT_MS = 50_000;
 
 const MODEL = "claude-opus-5-5";
 
@@ -31,8 +34,9 @@ You also get "greedy": the plan of our on-device greedy optimiser and its result
 
 Decide:
 1. busMoves: which bus replaces each broken trip — from "depot" (at most resources.spareBuses) or from a donorCandidates trip (that trip then has 0 seats, its students need other options). Only onto broken trips.
-2. assignments: one entry for EVERY student: {"student":"S1","bus":"T4","auto":""} or {"student":"S2","bus":"","auto":"A1"} or both "" if no transport.
-   Never exceed a trip's seats. A broken trip has 0 seats unless a busMove replaces it. Use only the student's own opts. Autos: at most resources.autos distinct auto ids, at most podSize students each, put students from the same or nearby stop together.
+2. assignments: ONLY the students whose seat you change compared with greedy.assign (everyone you leave out keeps their greedy seat):
+   {"student":"S1","bus":"T4","auto":""} or {"student":"S2","bus":"","auto":"A7"} or both "" for no transport. Keep this list short.
+   If you change busMoves, re-seat every student whose greedy seat is no longer valid. Never exceed a trip's seats. A broken trip has 0 seats unless a busMove replaces it. Use only the student's own opts. Autos: at most resources.autos distinct auto ids, at most podSize students each, put students from the same or nearby stop together.
 3. Priority: first minimise students who reach college later than (exam time − rules.examBufferMin) or not at all; earliest exams first. Then minimise students without any transport.
 4. studentsMissingExam: ids of exam students who still cannot make it. studentsWithoutTransport: ids with no transport.
 5. reasons: 3–6 short plain-English sentences for the transport cell, using bus names (not T/S ids), explaining the key decisions and the trade-offs.
@@ -77,22 +81,29 @@ export default async function handler(req, res) {
     if (mode === "crisis") {
       const ctx = context || {};
       if (!Array.isArray(ctx.students) || !Array.isArray(ctx.trips) || ctx.students.length > 800 || ctx.trips.length > 200) return send(res, 400, { error: "bad crisis context" });
-      // streamed: a large max_tokens on a non-streaming request is refused by the SDK (possible >10 min request)
+      // streamed (the SDK refuses a large max_tokens without streaming); one shared deadline for all attempts
+      const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), CRISIS_TIMEOUT_MS);
       const req = (withSchema) => client.beta.messages.stream({
-        ...common, max_tokens: 32000, system: CRISIS_SYSTEM,
-        output_config: withSchema ? { effort: "medium", format: { type: "json_schema", schema: CRISIS_SCHEMA } } : { effort: "medium" },
+        ...common, max_tokens: 16000, system: CRISIS_SYSTEM,
+        output_config: withSchema ? { effort: "low", format: { type: "json_schema", schema: CRISIS_SCHEMA } } : { effort: "low" },
         messages: [{ role: "user", content: JSON.stringify(ctx) }],
-      }).finalMessage();
+      }, { signal: ac.signal, maxRetries: 0 }).finalMessage();
       let msg, structured = true;
-      try { msg = await req(true); }
-      catch (e) { // only when the structured-output format itself is rejected: retry with plain JSON instructions
-        if (e instanceof Anthropic.BadRequestError && /format|schema|output_config/i.test(apiMessage(e))) { structured = false; msg = await req(false); } else throw e;
-      }
+      try {
+        try { msg = await req(true); }
+        catch (e) { // only when the structured-output format itself is rejected: retry with plain JSON instructions
+          if (e instanceof Anthropic.BadRequestError && /format|schema|output_config/i.test(apiMessage(e))) { structured = false; msg = await req(false); } else throw e;
+        }
+      } catch (e) {
+        if (ac.signal.aborted || e instanceof Anthropic.APIUserAbortError || e instanceof Anthropic.APIConnectionTimeoutError) // timeout → caller falls back to the optimiser
+          return send(res, 200, { ok: false, timeout: true, check: { ok: false, errors: [`Claude did not answer within ${CRISIS_TIMEOUT_MS / 1000} s`] } });
+        throw e;
+      } finally { clearTimeout(timer); }
       if (msg.stop_reason === "refusal") return send(res, 200, { ok: false, check: { ok: false, errors: ["Claude declined this request"] }, model: msg.model });
       if (msg.stop_reason === "max_tokens") return send(res, 200, { ok: false, check: { ok: false, errors: ["Claude's answer was cut off (too long)"] }, model: msg.model });
-      const plan = parseJson(textOf(msg));
+      const plan = mergeWithGreedy(ctx, parseJson(textOf(msg)));
       const check = checkCrisisPlan(ctx, plan);
-      return send(res, 200, { ok: check.ok, plan: check.ok ? plan : null, reasons: plan?.reasons || [], check, model: msg.model, structured });
+      return send(res, 200, { ok: check.ok, plan: check.ok ? plan : null, reasons: plan?.reasons || [], changed: plan?.changed ?? 0, check, model: msg.model, structured });
     }
     if (mode === "discover") {
       if (!String(from).trim()) return send(res, 400, { error: "from required" });

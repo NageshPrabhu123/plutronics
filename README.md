@@ -2,6 +2,20 @@
 
 **Live app:** _link coming soon_ · **Prompts & iterations:** [prompt.md](prompt.md)
 
+## ⏱ Demo in 2 minutes
+Works on a phone. Admin is open (no PIN).
+
+1. **Load starter routes.** Tap **Admin → 🚀 Load starter routes**. This adds 4 real routes (Puttur, Vitla, Moodbidri, B.C. Road → Sahyadri College) on real roads; the timings are samples.
+2. **Pick a stop.** Tap **Student → My bus stop**, type `B C Road`, choose a Puttur bus, tick **📝 I have an exam today** (09:00) and tap **I ride this bus**. The forecast card shows the % chance the bus is late.
+3. **Report a bus.** Tap **✋ Report → ❌ Didn't come**. The AI retrains, and the risk, status and reliability grade change immediately.
+4. **Simulate exam day crisis.** Tap **Admin → ⚡ Simulate exam day crisis**. In about 20 s: 2 KSRTC buses break down, demand rises 40%, the B C Road ↔ Farangipete road floods (OSRM finds a detour), and 120 simulated students are added (40% with exams).
+5. **Show before → after** (right under the buttons):
+   - **students who would miss their exam 27 → 0**;
+   - **students without transport 81 → 0**;
+   - **"Decided by Claude"** or **"Decided by on-device optimiser"** (the server checks Claude's plan; without an API key, or on timeout, the optimiser decides).
+6. **Show the student banner.** Switch to **Student**. The red banner shows *your* plan, for example: *"Your bus Puttur 06:45 is broken down → take B.C. Road 07:20 at 7:20, you'll reach by 7:59, before your 09:00 exam."*
+7. **Reset.** Tap **Admin → Reset crisis**. The crisis, the simulated students and the crisis alerts are removed.
+
 Rural students often wait an hour for a bus that never comes. With RouteLess, students tap **"bus came / didn't come"**. The app learns how reliable each route really is and forecasts:
 
 > **"34% chance the 8:31 Puttur – Mangaluru is late or doesn't come today — rain + Monday rush."**

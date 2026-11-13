@@ -329,7 +329,8 @@
     if (seenAlerts) list.filter((a) => !seenAlerts.has(a.ts) && forMe(a)).forEach((a) => notify(a.text));
     seenAlerts = new Set(list.map((a) => a.ts));
     $("#alertList").innerHTML = list.map((a) => `<div class="al ${a.level}">${a.scope === myRoute ? "📍 " : ""}${esc(a.text)}<small>${a.scope === "all" ? "All students" : esc(RL.R[a.scope]?.code || "route")} · ${a.auto ? "auto (crowd/AI)" : "transport office"} · ${new Date(a.ts).toLocaleString([], { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}</small></div>`).join("") || '<p class="muted">No alerts in the last 3 days.</p>';
-    const mine = list.filter((a) => forMe(a) && !P.dismissed.includes(a.ts));
+    // while the red crisis banner shows, crisis alerts stay in the Alerts tab only (no second banner on phones)
+    const mine = list.filter((a) => forMe(a) && !P.dismissed.includes(a.ts) && !(a.crisis && crisisOn()));
     const cnt = $("#alertCount"); cnt.textContent = mine.length; cnt.classList.toggle("hidden", !mine.length);
     const top = mine.find((a) => a.level === "high") || mine[0]; const b = $("#alertBanner");
     if (top) { b.className = "banner " + top.level; b.innerHTML = `<span>🚨 ${esc(top.text)}</span><button title="Dismiss">✕</button>`; b.querySelector("button").onclick = () => { P.dismissed.push(top.ts); P.dismissed = P.dismissed.slice(-200); saveP(); renderAlerts(); }; }
@@ -528,6 +529,11 @@
     const c = draft();
     $("#crisisState").textContent = crisisOn() ? (DB.crisis.simulated ? "ACTIVE · simulated" : "ACTIVE") : "off";
     $("#crisisState").className = "pill " + (crisisOn() ? "p-bad" : "p-info");
+    // live results right under the buttons (on phones the full plan is far below the settings)
+    $("#crisisSummary").innerHTML = crisisOn() && PLAN ? `<div class="metrics compact">
+      <div class="metric"><span>📝 Would miss their exam</span><b><span class="${PLAN.before.examMiss ? "bad" : "good"}">${PLAN.before.examMiss}</span><span class="arrow">→</span><span class="${PLAN.after.examMiss ? "bad" : "good"}">${PLAN.after.examMiss}</span></b></div>
+      <div class="metric"><span>🚶 Without transport</span><b><span class="${PLAN.before.stranded ? "bad" : "good"}">${PLAN.before.stranded}</span><span class="arrow">→</span><span class="${PLAN.after.stranded ? "bad" : "good"}">${PLAN.after.stranded}</span></b></div>
+    </div><p class="small"><b>${PLAN.decidedBy === "claude" ? "🤖" : "⚙️"} ${decidedBy()}</b> · <a href="#crisisPlan">full plan ↓</a></p>` : "";
     $("#cBroken").innerHTML = RL.TRIPS.length ? RL.TRIPS.map((t) => `<label><input type="checkbox" data-brk="${esc(t.id)}" ${c.broken.includes(t.id) ? "checked" : ""}/> ${esc(tripLabel(t))} <span class="muted small">${esc(RL.R[t.routeId].operator)}</span></label>`).join("") : '<p class="muted small">No routes yet. "Simulate exam day crisis" loads the starter routes first.</p>';
     $$("[data-brk]").forEach((x) => (x.onchange = () => { cdDirty = true; const id = x.dataset.brk; c.broken = x.checked ? [...new Set([...c.broken, id])] : c.broken.filter((b) => b !== id); renderCrisisPlan(); }));
     [["#cSurge", "surgePct"], ["#cSpare", "spare"], ["#cAutos", "autos"]].forEach(([id, f]) => { if (document.activeElement !== $(id)) $(id).value = c[f] ?? 0; });
@@ -616,13 +622,22 @@
       const { ctx, toReal } = RL.Crisis.claudeContext(input, greedy);
       let j;
       try {
-        const r = await fetch("api/assistant", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "crisis", context: ctx }) });
+        // server gives Claude 50 s; the browser waits at most 58 s (Vercel stops functions at 60 s)
+        const r = await fetch("api/assistant", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "crisis", context: ctx }), signal: AbortSignal.timeout(58000) });
         j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || "HTTP " + r.status);
       } catch (e) {
+        if (e.name === "TimeoutError" || e.name === "AbortError" || /HTTP 504/.test(e.message)) {
+          await save({ decision: "greedy", decisionNote: "Claude did not answer in time, so the on-device optimiser decided.", claude: null, claudeMeta: { ok: false, errors: ["Claude did not answer within the time limit"], reasons: [], model: "" } });
+          $("#cMsg").textContent = "Claude timed out: using the on-device plan."; return;
+        }
         await save({ decision: "greedy", decisionNote: `Claude API error: ${String(e.message).slice(0, 200)} So the on-device optimiser decided.`, claude: null, claudeMeta: { ok: false, errors: ["Claude API error: " + String(e.message).slice(0, 200)], reasons: [], model: "" } });
         $("#cMsg").textContent = "Claude unavailable: using the on-device plan."; return;
       }
       const meta = { model: j.model || "", ok: !!j.ok, errors: j.check?.errors || [], reasons: j.reasons || [], structured: !!j.structured, at: Date.now() };
+      if (j.timeout) {
+        await save({ decision: "greedy", decisionNote: `${meta.errors[0] || "Claude did not answer in time"}, so the on-device optimiser decided.`, claude: null, claudeMeta: meta });
+        $("#cMsg").textContent = "Claude timed out: using the on-device plan."; return;
+      }
       if (!j.ok) {
         await save({ decision: "greedy", decisionNote: `Claude's plan failed the safety check (${meta.errors[0] || "invalid reply"}), so the on-device optimiser decided.`, claude: null, claudeMeta: meta });
         $("#cMsg").textContent = "Claude's plan was rejected by the safety check: using the on-device plan."; return;

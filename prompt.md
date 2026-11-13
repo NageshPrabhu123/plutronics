@@ -413,7 +413,50 @@ The test data was then reset.
 
 ### Still open
 - **Claude's real decisions:** add credit to the Anthropic account, then press **Admin → 🤖 Ask Claude to decide** (or "Simulate exam day crisis") to see Claude's own plan, reasons and comparison. Everything around the call is built and tested.
-- **Vercel timeout:** `vercel.json` gives the Claude function `maxDuration: 300`, because a crisis decision can take 30–90 s. Vercel plans differ in the maximum they allow.
+
+---
+
+## v7: Ready for judges
+
+### Prompt 9 (exact text)
+
+```
+v7: last step, no new features. Get it live and ready for judges.
+
+1. Push everything to GitHub main. Double-check that .env and node_modules are NOT pushed.
+2. Make sure it deploys on Vercel. If maxDuration 300 isn't allowed on our plan, lower it,
+   and make the Claude crisis call fall back to the optimiser on a timeout instead of
+   failing.
+3. Check the crisis card, the before/after numbers and the student banner on a phone-size
+   screen.
+4. At the top of the README, add "Demo in 2 minutes": Load starter routes → pick a stop →
+   report a bus → Simulate exam day crisis → show before/after → show the student banner
+   → Reset.
+5. Add this prompt to prompt.md.
+```
+
+### What changed and why
+
+| # | Problem | Fix |
+|---|---|---|
+| 34 | `maxDuration: 300` is only allowed on some Vercel plans or with Fluid Compute; 60 s works everywhere. | `vercel.json`: `api/assistant.js` uses **60 s**. |
+| 35 | A Claude crisis decision could take longer than the function may run, ending in a hard failure. | The server gives Claude **50 s** (one `AbortController` deadline covering both attempts, no SDK retries) and then replies `{ok:false, timeout:true}`. The browser waits at most 58 s; on a timeout or a Vercel 504 it keeps the optimiser's plan and shows *"Claude did not answer in time, so the on-device optimiser decided."* |
+| 36 | Re-listing all 169 students made Claude's answer long and slow. | Claude now lists **only the students it seats differently from the greedy plan**; everyone else keeps their greedy seat. The server merges the two (`mergeWithGreedy`) and runs the **same full safety check** on the merged plan. Effort `low`, `max_tokens` 16 000. |
+| 37 | On a phone, the before → after numbers were about two screens below the crisis settings. | A compact **before → after + "Decided by …"** summary now sits right under the Simulate/Reset buttons. |
+| 38 | On a phone, the crisis banner and a crisis alert banner stacked, taking about 230px. | While the red crisis banner shows, crisis alerts stay in the Alerts tab instead of a second banner. |
+
+### Tests (all passing)
+- **Timeout:** the real `api/assistant.js` handler was pointed (via `ANTHROPIC_BASE_URL`, dummy key) at a stand-in API that never answers. It returned `HTTP 200 {ok:false, timeout:true}` "Claude did not answer within 50 s" after **50 s**, inside Vercel's 60 s.
+- **Merge:** a changed student moves, untouched students keep their greedy seat, and the merged plan passes the safety check.
+- **Regression:** the Vercel/Upstash test passes 12/12, and every file passes `node --check`.
+- **Phone (375px), the full 2-minute demo on the no-key server:**
+  - load starter routes → pick B C Road → register with a 09:00 exam → report "late" → simulate;
+  - **summary 27 → 0 / 81 → 0**, "⚙️ Decided by on-device optimiser";
+  - personal banner *"Your bus Puttur – Mangaluru (sample) 06:45 is broken down → take B.C. Road – Mangaluru (sample) 07:20 at 7:20, you'll reach by 7:59, before your 09:00 exam."*;
+  - reset (crisis off, 0 simulated students, the real rider kept).
+  
+  Every tab was 375px wide with no element past the edge; the crisis card and banner had no tap target under 40px; no console errors.
+- **Not pushed:** `.env`, `data/`, `node_modules` (checked before the commit; `.gitignore` covers all three).
 
 ---
 

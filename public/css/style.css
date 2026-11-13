@@ -122,6 +122,8 @@ td button{padding:4px 10px!important;font-size:.8rem}
 .metric b{display:block;font-size:1.6rem}.metric .arrow{color:var(--muted);font-weight:400;margin:0 6px}
 .metric .good{color:var(--ok)}.metric .bad{color:var(--bad)}
 .metric span{font-size:.82rem;color:var(--muted)}
+.metrics.compact{grid-template-columns:1fr 1fr;margin:10px 0 4px}
+.metrics.compact .metric{padding:8px 10px}.metrics.compact .metric b{font-size:1.35rem}
 .planlist li{margin:4px 0}
 .decision{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0;font-size:.9rem}
 .cmpgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
@@ -174,5 +176,6 @@ td button{padding:4px 10px!important;font-size:.8rem}
   .tablewrap td[data-label=""]::before{content:none}
   .tablewrap td select{min-width:130px}
   .crisisgrid,.checklist,.metrics,.cmpgrid{grid-template-columns:minmax(0,1fr)}
+  .metrics.compact{grid-template-columns:minmax(0,1fr) minmax(0,1fr)} /* the two headline numbers stay side by side */
   .checklist label{min-height:36px}
 }

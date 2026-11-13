@@ -5,6 +5,19 @@
 // plan = Claude's JSON: { assignments[{student,bus,auto}], busMoves[{from,to,reason}], reasons[], studentsMissingExam[], studentsWithoutTransport[] }
 const toMin = (t) => { const [h, m] = String(t).split(":").map(Number); return h * 60 + m; };
 
+// v7: Claude lists only the students it seats DIFFERENTLY from the greedy plan (shorter answer → fits Vercel's 60 s).
+// Everyone it doesn't mention keeps their greedy seat. The merged, complete plan is what gets checked and used.
+export function mergeWithGreedy(ctx, plan) {
+  if (!plan || !Array.isArray(plan.assignments)) return plan;
+  const seat = new Map(Object.entries(ctx.greedy?.assign || {}));
+  for (const a of plan.assignments) if (a && a.student) seat.set(a.student, a.bus || (a.auto ? a.auto : ""));
+  const assignments = (ctx.students || []).map((s) => {
+    const v = seat.get(s.id) || "";
+    return { student: s.id, bus: v.startsWith("T") ? v : "", auto: v && !v.startsWith("T") ? v : "" };
+  });
+  return { ...plan, assignments, changed: plan.assignments.length };
+}
+
 export function checkCrisisPlan(ctx, plan) {
   const errors = [];
   if (!plan || !Array.isArray(plan.assignments) || !Array.isArray(plan.busMoves)) return { ok: false, errors: ["reply was not the required JSON shape"], metrics: null };
