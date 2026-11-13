@@ -28,14 +28,18 @@
   const cacheSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify({ t: Date.now(), v })); } catch {} };
 
   async function overpass(q) {
-    const hosts = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
-    for (const h of hosts) {
-      try { const r = await fetch(h, { method: "POST", body: "data=" + encodeURIComponent(q), headers: { "Content-Type": "application/x-www-form-urlencoded" }, signal: AbortSignal.timeout(25000) }); if (r.ok) return await r.json(); } catch {}
-    }
-    throw new Error("Overpass unavailable");
+    // try all public Overpass servers at once; the first good answer wins
+    const hosts = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
+    return Promise.any(hosts.map(async (h) => {
+      const r = await fetch(h, { method: "POST", body: "data=" + encodeURIComponent(q), headers: { "Content-Type": "application/x-www-form-urlencoded" }, signal: AbortSignal.timeout(20000) });
+      if (!r.ok) throw new Error("overpass " + r.status); return r.json();
+    })).catch(() => { throw new Error("Overpass unavailable"); });
   }
 
-  // Real bus stops & stations from OpenStreetMap (cached 24 h)
+  // Bundled snapshot of real OpenStreetMap stops: dots show instantly, even when Overpass is down
+  RL.loadStopsSnapshot = async () => (await (await fetch("data/osm-stops.json")).json()).stops;
+
+  // Live bus stops & stations from OpenStreetMap (cached 24 h)
   RL.loadStops = async () => {
     const c = cacheGet("routeless.osmstops", 864e5); if (c) return c;
     const [s, w, n, e] = RL.BBOX;

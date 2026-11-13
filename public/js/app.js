@@ -260,7 +260,7 @@
     }
     if (stopLayer.getLayers().length !== STOPS.length) {
       stopLayer.clearLayers();
-      STOPS.forEach((s) => L.circleMarker([s.lat, s.lng], { radius: s.station ? 5 : 3, color: "#0f766e", weight: 1, fillOpacity: 0.7 }).addTo(stopLayer)
+      STOPS.forEach((s) => L.circleMarker([s.lat, s.lng], { radius: s.station ? 8 : 6, color: "#ffffff", weight: 2, fillColor: s.station ? "#b45309" : "#0f766e", fillOpacity: 0.95 }).addTo(stopLayer)
         .bindPopup(`<b>${esc(s.name)}</b><br><button data-pick="${s.id}">Set as my stop</button>`));
     }
     const sel = RL.T[P.profile.tripId]?.routeId || "";
@@ -287,7 +287,7 @@
     }
     if (meMarker) meMarker.remove(); meMarker = null;
     if (P.profile.stop) meMarker = L.marker([P.profile.stop.lat, P.profile.stop.lng], { icon: L.divIcon({ html: "📍", className: "", iconSize: [26, 26] }) }).addTo(map).bindTooltip("My stop");
-    $("#mapLegend").innerHTML = RL.ROUTES.map((r) => `<span><i style="background:${routeColor(r.id)}"></i>${esc(r.code)}</span>`).join("") || '<span class="muted">Dots = real OpenStreetMap bus stops. Click one to set it as your stop.</span>';
+    $("#mapLegend").innerHTML = RL.ROUTES.map((r) => `<span><i style="background:${routeColor(r.id)}"></i>${esc(r.code)}</span>`).join("") || '<span class="muted">🟢 bus stop · 🟠 bus station (real OpenStreetMap data). Click a dot to set it as your stop.</span>';
   }
   function setStop(s) {
     if (!s) return; P.profile.stop = { id: s.id, name: s.name, lat: s.lat, lng: s.lng }; P.profile.tripId = ""; saveP();
@@ -1017,8 +1017,13 @@ ${x.after.examMiss ? `Still at risk: ${x.after.examMiss} exam student(s). Ask th
   renderUserChip();
   wire(); renderAll();
   addMsg("a", "Hi! Set your bus stop, then ask me which bus to take, why it's risky, or what to do if it doesn't come.");
-  stopsReady = RL.loadStops().then((s) => { STOPS = s; $("#stopList").innerHTML = s.map((x) => `<option value="${esc(x.name)}">`).join(""); renderAll(); })
-    .catch(() => { $("#stopInfo").textContent = "OpenStreetMap stops couldn't load — you can still type a village name."; });
+  // stops: bundled OpenStreetMap snapshot first (instant dots), then live Overpass data replaces it when reachable
+  const useStops = (s) => { if (!s || !s.length) return; STOPS = s; $("#stopList").innerHTML = s.map((x) => `<option value="${esc(x.name)}">`).join(""); renderAll(); };
+  const snapshotReady = RL.loadStopsSnapshot().then((s) => { if (!STOPS.length) useStops(s); }).catch(() => {});
+  stopsReady = Promise.all([snapshotReady, RL.loadStops().then(useStops).catch(() => {})]).then(() => {
+    if (!STOPS.length) $("#stopInfo").textContent = "OpenStreetMap stops couldn't load — you can still type a village name.";
+  });
+  snapshotReady.then(() => { stopsReady = Promise.resolve(); }); // simulate/starter routes only need some stops
   loadWeather();
   setMode(startMode());
   refresh().then(() => { setRole(P.role === "admin" && isAdmin() ? "admin" : "student"); setMode(startMode()); });

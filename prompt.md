@@ -690,3 +690,14 @@ there must be main page with attractive eyecatchy  login interface and what you 
 - **After login:** the existing app is the landing page (students land on Route Finder, the transport cell on Admin). **Log out** returns to the welcome page.
 - **Emergency access shows only the Alternatives tab**, with its own "📍 Where are you?" box (type a stop, or use GPS to pick the nearest real OpenStreetMap stop). It lists other buses, nearby-stop buses, verified autos with call buttons, taxi stands and the Google Maps transit link. The top bar shows "🆘 Emergency access · Log in · Exit"; **Exit** returns to the welcome page. The choice lasts only for the browser session.
 - **Tested:** welcome page first; emergency shows only the `alt` tab and works for B C Road; Exit returns; student sign-up lands on Route Finder with all 7 student tabs; logout returns to the welcome page; phone layout stacks the cards; no console errors.
+
+### Prompt 16 (exact text)
+```
+the dots are not visible in map
+```
+**Cause:** the map's stop dots come from OpenStreetMap's Overpass service, and every public Overpass server was failing (overpass-api.de answered 406, the mirrors timed out), so the app loaded 0 stops.
+**Fix:**
+- The app now ships a **bundled snapshot of real OpenStreetMap stops** (`public/data/osm-stops.json`, 102 named stops around Mangaluru, fetched 2026-11-13, © OpenStreetMap contributors, ODbL). The dots appear instantly.
+- Live Overpass data replaces the snapshot when any of 4 public servers answers (all are tried in parallel).
+- The dots are bigger (6 px stops, 8 px stations) with white outlines; stations are orange, and the legend explains the colours.
+- **Tested:** with the live cache cleared and Overpass down, the map shows all 102 dots.
