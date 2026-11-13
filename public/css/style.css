@@ -71,7 +71,9 @@ main button.ghost{background:transparent;color:var(--brand);border:1px solid var
 .suggest{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
 .suggest button{background:var(--bg)!important;color:var(--ink)!important;border:1px solid var(--line)!important;font-weight:500!important;font-size:.85rem}
 .chat{min-height:200px;max-height:460px;overflow:auto;display:flex;flex-direction:column;gap:8px;padding:6px 0}
-.msg{padding:10px 12px;border-radius:12px;max-width:88%;white-space:pre-wrap;line-height:1.45}
+.msg{padding:10px 12px;border-radius:12px;max-width:88%;white-space:pre-wrap;line-height:1.45;overflow-wrap:anywhere;min-width:0}
+.msg a{color:var(--brand);font-weight:600}
+.msg.u a{color:#fff}
 .msg.u{align-self:flex-end;background:var(--brand);color:#fff}.msg.a{align-self:flex-start;background:var(--bg);border:1px solid var(--line)}
 .msg .src{display:block;font-size:.72rem;color:var(--muted);margin-top:6px}
 .askrow{display:flex;gap:8px;margin-top:8px}.askrow input{flex:1}

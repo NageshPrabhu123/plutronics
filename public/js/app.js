@@ -586,7 +586,14 @@
     const j = await res.json().catch(() => ({})); if (!res.ok || !j.answer) throw new Error(j.error || "ai " + res.status); return j;
   }
   function addMsg(cls, text, src) {
-    const d = document.createElement("div"); d.className = "msg " + cls; d.textContent = text;
+    const d = document.createElement("div"); d.className = "msg " + cls;
+    // URLs become short safe links (built as DOM nodes, never as HTML) so long links don't overflow the bubble
+    String(text).split(/(https?:\/\/[^\s)]+)/g).forEach((part, i) => {
+      if (i % 2 === 0) { d.appendChild(document.createTextNode(part)); return; }
+      const a = document.createElement("a"); a.href = part; a.target = "_blank"; a.rel = "noopener";
+      a.textContent = /google\.[^/]+\/maps/.test(part) ? "Open in Google Maps ↗" : "Open link ↗";
+      d.appendChild(a);
+    });
     if (src) { const s = document.createElement("span"); s.className = "src"; s.textContent = src; d.appendChild(s); }
     $("#chat").appendChild(d); $("#chat").scrollTop = 1e9; return d;
   }

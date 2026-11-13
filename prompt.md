@@ -730,3 +730,9 @@ it is telling same for all the prompts
 
 Anything else gets a help list instead of a wrong answer.
 **Tested** (B C Road, starter routes): each of `hi`, `which bus should I take?`, `why is my bus risky?`, `when should I leave?`, `is my bus running?`, `what if my bus doesnt come?`, `which route is least reliable?` and `tell me a joke` got a different, matching answer.
+
+### Prompt 19 (exact text, with a screenshot circling a long Google Maps URL running out of the chat bubble)
+```
+this is overflowing
+```
+**Fix:** links in chat replies become short clickable links ("Open in Google Maps ↗"), built as page elements rather than inserted HTML, so a reply can't inject markup. Chat bubbles also wrap long words (`overflow-wrap:anywhere`). **Tested:** the reply shows "Open in Google Maps ↗", the bubble stays inside the chat, and there is no sideways scroll.
