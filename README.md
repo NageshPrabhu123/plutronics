@@ -82,7 +82,7 @@ Optional: create a `.env` file containing `ANTHROPIC_API_KEY=...` for the Claude
 1. Import the repo with framework preset **Other**. `vercel.json` already sets the output directory to `public/`, and `api/` holds the two functions.
 2. Storage → connect **Upstash for Redis**. This sets `KV_REST_API_URL` and `KV_REST_API_TOKEN`. Without it, reports are not kept between visits.
 3. Optional: add `ANTHROPIC_API_KEY` for Claude chat, the evidence letter and AI route discovery.
-4. **Login settings (required):** `SESSION_SECRET` (a long random string), `ADMIN_ID`, and `ADMIN_PASSWORD`. Use strong values, and never put them in the code.
+4. **Login settings (required):** `SESSION_SECRET` (a long random string), `ADMIN_ID`, and `ADMIN_PASSWORD`. Optional: `ALLOWED_EMAIL_DOMAINS` (e.g. `sahyadri.edu.in,mite.ac.in`) to allow only college emails to sign up. Use strong values, and never put them in the code.
 
 Works on phones: tested at 375px with no sideways scrolling, 44px tap targets, and tables shown as cards.
 
