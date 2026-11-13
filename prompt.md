@@ -1,0 +1,470 @@
+# prompt.md — RouteLess: The Last Mile
+
+**Event:** Aerophilia 2K26 · Prompt Battle
+**Challenge:** ROUTELESS: THE LAST MILE (AI-powered rural transportation)
+**Team member:** K. Nagesh Prabhu
+**AI tool used to build:** Claude Code (desktop app), model **Claude Opus 5.5** (`claude-opus-5-5`)
+**Date:** 13 Nov 2026
+
+This file records every prompt we gave the AI, how the prompts changed over three iterations, which APIs the app uses, and every bug found and fixed.
+
+---
+
+## 1. Problem statement given to the AI (summary of the PDF)
+
+> In many rural villages, students depend on a limited number of government buses to reach school and college. What happens when buses are unavailable, routes are disrupted, or demand exceeds capacity? Use AI tools and prompt engineering to build a solution: smart transportation platform, bus allocation, route optimisation, demand prediction, simulation, or something new. Judged on prompt quality, prompt iterations, AI utilisation, creativity, problem solving, debugging, adaptability to the surprise challenge and quality of the working solution. Submit a deployed link and a public GitHub repo.
+
+---
+
+## 2. Prompts (exact text, in order)
+
+### Prompt 1: Feature brainstorm (team chat, 10:40)
+
+```
+Smart Route Finder	Finds suitable bus routes to college
+AI Demand Prediction	Estimates student demand by route
+Live Bus Status	Available, delayed, cancelled or full
+Alternative Transport	Suggests alternative routes and verified transport options
+Smart Bus Allocation	Recommends where additional buses are needed
+Student Grouping	Identifies students travelling on similar routes
+Admin Dashboard	Displays routes, demand and bus capacity
+Emergency Alerts	Notifies students about disruptions
+```
+
+### Prompt 2: The core idea (10:41)
+
+```
+Students often wait an hour for a bus that never arrives. Students tap "bus came / didn't come,"
+and the AI learns each route's reliability and forecasts "78% chance the 7:40 bus is late today —
+rain + market day." It also shows a reliability score per route, which officials can use as
+evidence to argue for more buses.
+```
+
+### Prompt 3: Build instruction to Claude Code (with the PDF attached), iteration v0
+
+```
+@PromptBattle_Aerophilia2K26.pdf
+[Prompt 1 + Prompt 2 pasted]
+I have provided you the problem statement pdf and you have to build a complete application (app)
+before 2:15 hrs. This is a prompt battle competition and you can use any api etc but mention the
+prompt i gave and api you used in the prompt.md (everything must be written in prompt.md)
+```
+
+**Result of v0:** a working app with every feature, but it ran on a **synthetic dataset**: invented bus codes, 140 days of generated reports and invented phone numbers.
+
+### Prompt 4: "No fake data" (iteration v1, with a screenshot of the forecast card circled)
+
+```
+this is fake data right i want the real app and it must get all bus. bus name must be real name
+and no fake data. there must be live data
+```
+
+**How the AI responded:**
+- **Checked what real data exists.** It queried OpenStreetMap (Overpass) for the Mangaluru belt and found real bus stops, but only one mapped bus route. KSRTC and private operators publish no open live-GPS or timetable API.
+- **Moved to live sources and real user input:**
+  - real OSM bus stops, loaded live;
+  - real road routing (OSRM);
+  - live weather (Open-Meteo);
+  - a shared database where the transport cell enters real routes and students submit real reports;
+  - **AI route discovery**, where Claude with web search finds real bus services and cites its sources;
+  - a Google Maps transit link from each student's stop for "every bus".
+- **Changed the model:** it became a **Bayesian (MAP) logistic regression** that starts from weak priors and learns only from real reports. It shows "prior estimate" until there is evidence.
+- **Stopped halfway:** this rewrite was cut off before `app.js` was replaced (see v2).
+
+### Prompt 5: Fix and finish (iteration v2)
+
+```
+v2: the app crashes on load, please fix it and finish it. We have about 1.5 hours left.
+
+I think the last rewrite stopped halfway. index.html, data.js, model.js and the api files are
+the new version, but app.js is still the old one. It calls things like RL.dateKey, RL.V and
+RL.HISTORY_REPORTS that don't exist anymore, so nothing shows up.
+
+Please:
+1. Rewrite app.js so it works with the new files. Don't change the overall design. Keep all
+   the features: route finder, live status, report, alternatives, groups, alerts, Ask AI and
+   admin.
+2. Make sure no tab crashes when there are no routes or reports yet. Just show a simple
+   message.
+3. Add a "Load starter routes" button in Admin with 3–4 routes between real places (Puttur,
+   Vitla, B.C. Road, Moodbidri → Sahyadri College). Mark the timings as samples, and don't
+   make up phone numbers.
+4. Refresh the data every 20 seconds. If the server is down, show "offline" instead of
+   breaking.
+5. Test everything yourself: load the starter routes, send a few reports, change rain and day,
+   and check that the numbers update. Fix every console error.
+6. Update README and prompt.md with this prompt and the bugs you fix.
+
+It's done when I can open the app fresh, load the starter routes, pick my stop, see the
+forecast, report my bus and see it change, with no errors.
+
+You do everything step by step
+```
+
+**Why this prompt worked better:**
+- It named the exact broken state: which files were new and which were old.
+- It listed the missing symbols (`RL.dateKey`, `RL.V`, `RL.HISTORY_REPORTS`).
+- It set limits: keep the design and keep every feature.
+- It asked for honest starter data: real places, sample timings, no phone numbers.
+- It gave a testable "done" definition.
+
+**Result of v2:** the app worked end to end: fresh start → starter routes → pick stop → forecast → report → forecast changes, with no console errors (bugs 8–16 below).
+
+### Prompt 6: Make it ready to submit (iteration v3)
+
+```
+v3: the app works now. No new features, just make it ready to submit.
+
+1. Check it on a phone-size screen (about 375px wide). Fix anything that overflows,
+   is cut off or is hard to tap, especially the tabs, the forecast card and the tables.
+2. Make sure it deploys on Vercel as it is: both api functions work, it runs fine without
+   ANTHROPIC_API_KEY, and data is saved in Upstash Redis when the KV env vars are set.
+3. Don't set an ADMIN_PIN, so the judges can open the Admin tab.
+
+4. Update prompt.md: add the result of v3, this prompt, and any bugs you fix.
+   Update the README with the live link once I give it to you.
+```
+
+**Result of v3:**
+- **Phone (375px):** every tab measured has no horizontal page scroll, no element past the screen edge, and no tap target under 40px (tabs are 44px). The header shrank from 187px to 87px. Tables show as labelled cards.
+- **Desktop (1280px):** unchanged.
+- **Vercel:** a test harness called both API functions the way Vercel does, against a stand-in Upstash REST server. All 12 checks passed, including a simulated Upstash outage that left the stored data intact.
+- **Admin:** stays open, with no `ADMIN_PIN`.
+
+### Prompts used inside the app (sent to Claude by `api/assistant.js`)
+
+**Student assistant (system prompt):**
+```
+You are RouteLess, a transport assistant for rural college students in Dakshina Kannada (Mangaluru
+region), India, who depend on KSRTC and private buses. You receive LIVE JSON from the RouteLess app:
+bus routes registered by the college transport cell, real student "bus came / didn't come" reports,
+AI delay forecasts (logistic regression trained on those reports + live rain forecast), live
+statuses, registered riders, route reliability scores and verified alternative transport.
+Rules:
+- Ground every claim in the JSON. Quote exact times, risk percentages and reliability grades, and
+  say how many real reports a number is based on. Never invent buses, timings, phone numbers or
+  numbers. If the data has no route or no reports, say so plainly and suggest the Google Maps
+  transit link or adding the route.
+- Be short and practical: a student is reading this on a phone at a bus stop. Plain text, no
+  markdown headings, at most ~120 words unless asked for more.
+- Give a concrete recommendation and one fallback. Safety first: prefer verified options and
+  travelling in groups early morning or in heavy rain.
+- If the student writes in Kannada, reply in simple Kannada.
+```
+
+**Evidence letter for officials:**
+```
+Using ONLY the evidence JSON above (real student reports collected by RouteLess), draft a formal,
+polite letter from the college's Student Transport Committee to the KSRTC Depot Manager, Mangaluru
+Division, requesting additional or standby buses on this route. Cite the reliability score, number
+of student reports, late and non-arrival counts, crowding reports and the rainy-vs-dry comparison
+if present. If the sample is small, say so honestly. Propose 3 specific, low-cost actions. Plain
+text, under 280 words.
+```
+
+**AI route discovery (Claude + web search tool):**
+```
+System: You research REAL bus services in Dakshina Kannada, Karnataka, India for a student transport
+app. Use web search. Only report services you found evidence for on the web (KSRTC timetables, news,
+bus-timing sites, forums). Never invent route numbers or timings. If timings are unknown, leave
+departures empty.
+User: Find real bus services (KSRTC and private) that students can take from "<village>" to
+"<college>" in the morning. Reply with ONLY a JSON array … {code, operator, via[], departures[],
+frequency, source URL} … Return [] if nothing reliable is found. Max 6 items.
+```
+An admin always reviews AI-found routes in the "Add route" form before saving, and the route keeps an "AI-found" tag and its source link.
+
+---
+
+## 3. Debugging log (all iterations)
+
+| # | Iteration | What we saw | Fix |
+|---|---|---|---|
+| 1 | v0 | The 24 km/h bus speed made the 7:40 bus miss the 8:45 college start. | Realistic speeds, and timetable moved earlier. (Timings now come from OSRM road times.) |
+| 2 | v0 | Old trip IDs saved in the browser crashed training. | Drop unknown trip IDs on load. |
+| 3 | v0 | The report toast showed "45 → 45" because the "before" score was read after adding the report. | Read the score before posting. |
+| 4 | v0 | A tie between "on time" and "didn't come" reports showed **Available**. | Ties are broken by recency. |
+| 5 | v0 | High alerts on other routes never reached the banner. | High alerts now go to everyone. |
+| 6 | v0 | An LLM called from the browser would leak the API key. | Claude sits behind `/api/assistant`, a serverless function. |
+| 7 | v1 | The user pointed out the data was fake. | Rebuilt on live OSM, OSRM and Open-Meteo data, a shared database and real reports. No synthetic data is left. |
+| 8 | v1 → v2 | **The app crashed on load:** the rewrite stopped halfway, and the old `app.js` called the removed `RL.dateKey`, `RL.V` and `RL.HISTORY_REPORTS`. | Rewrote `app.js` against the new data, model and API layer. |
+| 9 | v2 | The unfinished draft of `app.js` named the local prefs object `L`, which would have **overwritten Leaflet's global `L`** and broken the map. | Renamed it to `P`, with a comment warning against reuse. |
+| 10 | v2 | Tabs could throw on an empty database (no routes, trips or riders). | Every tab has an empty-state message, and each render runs inside `safe()`, so one failing tab cannot blank the page. |
+| 11 | v2 | The "● live · N reports" chip only updated on the 20 s poll, so it showed 0 just after a report. | The chip now updates whenever new data arrives (`ingest`). |
+| 12 | v2 | Without `ANTHROPIC_API_KEY`, every Ask AI or letter request logged a **501 console error**. | `GET /api/assistant` reports `{available}` once, and the app then uses the on-device assistant without failing requests. |
+| 13 | v2 | Server down: the app had to keep working. | Tested by stopping the server: the chip shows "● offline · retrying", the last data stays on screen, and it recovers automatically. |
+| 14 | v2 | **Wrong starter coordinate:** Farangipete was hard-coded about 2.6 km off, so a student at the real Farangipete stop saw "No registered bus route". | Starter stops are now matched **by name to real OSM stops** (within 8 km of a rough hint), then by distance, with corrected hints. |
+| 15 | v2 | The Report tab kept the first bus in its list instead of the student's own bus, so a report counted against a different trip. | The Report and Groups tabs follow "My usual bus" unless the student changes them by hand. |
+| 16 | v2 | Admin re-rendering every 20 s reset dropdowns while you were using them. | `keepSel()` keeps the current choice when lists re-render. |
+| 17 | v3 | **Phone:** the header wrapped into 4 rows (187px tall). | Brand and Student/Admin toggle share row 1, the two status chips sit on row 2, and the subtitle is hidden: 87px. |
+| 18 | v3 | **Phone:** the admin tables were 1,092px wide in a 310px box, and narrow wrapped columns made each row extremely tall. | Below 640px every table row becomes a stacked card. `labelTable()` copies column headers into `data-label`, and CSS shows them as labels. |
+| 19 | v3 | **Phone:** inputs and buttons were 33–37px tall, below a comfortable finger tap. The tab strip showed a scrollbar. | Inputs and buttons are at least 44px (16px font, which also stops iOS zooming on focus), tabs are 44px, and the strip scrollbar is hidden. |
+| 20 | v3 | **Phone:** the active tab (e.g. Admin) could sit off-screen in the scrollable tab strip. | `showTab()` scrolls the active tab to the centre of the strip. |
+| 21 | v3 | The forecast headline repeated the route name: "…Puttur – Mangaluru (sample) is late … — Puttur – Mangaluru (sample) track record". | The reason now reads "this route's track record". The headline is also smaller on phones. |
+| 22 | v3 | **Data-loss risk:** if an Upstash read failed (network blip or rate limit), `load()` returned an *empty* database, and the next report would have saved it **over all existing data**. | A failed read now throws, and `/api/data` returns 503 (the app shows "offline · retrying"). Only "key not set yet" or "file not created yet" count as empty. A simulated outage test confirms nothing is overwritten. |
+| 23 | v3 | The whole database is one Redis value, so it could grow past Upstash's request-size limit. | Keep only the newest 5,000 reports (about 0.75 MB). |
+| 24 | v3 | Vercel defaults: AI route discovery (web search) can take 20–60 s, and `"node": ">=18"` triggers a version warning. | `vercel.json` gives `api/assistant.js` `maxDuration: 60` (and `api/data.js` 15). Node is pinned to `22.x`. |
+| 25 | v3 | The PIN warning in Admin sounded like an error to judges. | It now reads "Admin is open (no ADMIN_PIN set)…". Leaving it open is deliberate so the judges can use Admin. |
+
+**v3 Vercel-readiness test** (a stand-in Upstash REST server, with handlers called as Vercel calls them: `req.body` pre-parsed, `VERCEL=1`, and no `ANTHROPIC_API_KEY` or `ADMIN_PIN`), 12/12 passing:
+1. GET on an empty database goes through Upstash (`storage: "upstash"`, `adminLocked: false`).
+2. Adding a route without a PIN works, and the `sample` flag is kept.
+3. A report is saved.
+4. The device `clientId` is not exposed publicly.
+5. GET reads back what was saved.
+6. Every Upstash call sends the Bearer token.
+7. During an outage, POST returns 503.
+8. During an outage, GET returns 503.
+9. The stored database is unchanged after the outage.
+10. The data is intact after the outage.
+11. The assistant answers GET with `available: false`.
+12. The assistant answers POST with 501, which the app never triggers because it checks `available` first.
+
+**Final acceptance test (all passing, no console errors):**
+1. Fresh browser and empty database: every tab shows a simple empty-state message.
+2. Admin → **Load starter routes**: 4 routes saved, snapped to real OSM stops (e.g. "B C Road Bus Station", "Kaikamba Market Bus Stop"), with OSRM road times.
+3. Pick the stop "Farangipete": 7 options, and the forecast reads "25% chance the 8:31 Puttur – Mangaluru (sample) is late… — no reports yet — prior estimate."
+4. What-if: heavy rain moves a forecast from 20% to 40%; heavy rain on a Monday moves it to 49%.
+5. Report "Didn't come": the forecast goes from 25% to 34%, the status becomes "Cancelled (1 student report today)", and reliability becomes 40/100 (F). With 2 "didn't come" reports the emergency banner fires automatically.
+6. Rider registration, then Groups shows the pod; an admin override sets "Delayed" and sends an alert; the evidence letter is generated; Alternatives shows the Google Maps link, other buses and OSM taxi stands.
+7. Server stopped: "offline · retrying". Server restarted: "live" again.
+
+---
+
+## 🚨 Surprise Hurdle: The Exam Day Crisis (v5 + v6)
+
+**The surprise brief (PDF, 100 minutes):** on an exam day, two government buses break down, student demand rises 40%, a road between two villages floods, and several students have exams within 2 hours. Adapt RouteLess to reallocate buses, suggest other routes, put exam students first, use resources efficiently, and minimise the number of students who don't reach college on time.
+
+### Prompt 7: v5, Exam Day Crisis mode (exact text)
+
+```
+v5 – SURPRISE HURDLE: Exam Day Crisis (PDF attached). We have 100 minutes.
+Build it on top of the current app. Don't change the existing features or design.
+
+Add a "🚨 Exam Day Crisis" mode that handles all 4 problems in the PDF:
+
+1. Bus breakdown: in Admin, the transport cell can mark any 2+ trips as "Broken down".
+   Those buses get 0 seats.
+2. Demand surge: a "Demand +__%" box (default 40%) that multiplies the demand on every trip.
+3. Road blockage: the admin picks a blocked road between two stops (e.g. B C Road →
+   Farangipete). Every route that uses that road is flagged. Find a detour with OSRM
+   (alternatives=true, pick the one that avoids the blocked spot) and show the extra minutes.
+   If there's no detour, send those students to the nearest other route or a shared auto.
+4. Exam students: when a student taps "I ride this bus", they can tick "I have an exam today"
+   and enter the exam time. These students get top priority.
+
+Then make a "Crisis plan" optimiser:
+- Fill the available seats with exam students first (earliest exam first), then everyone else.
+- Move spare and under-used buses to replace the broken ones.
+- For students who still don't fit, suggest the next bus, a nearby-stop bus or a pod of 4 in
+  a shared auto.
+- Show before vs after: "students who would miss their exam: X → Y" and "students left
+  without transport: X → Y". The goal is to make Y as small as possible.
+
+Also add:
+- A one-click "Simulate exam day crisis" button for the demo. It breaks 2 KSRTC trips,
+  sets +40%, blocks one road and adds about 120 simulated students (40% with exams within
+  2 hours). Label all of it "simulated" and add a "Reset crisis" button.
+- When crisis mode is on, show a red banner to all students with their personal plan
+  ("Your bus is broken down → take X at 7:40, you'll reach by 8:20, before your 9:30 exam").
+  Send alerts automatically to the affected routes.
+- Save the crisis state on the server (api/data.js, admin action "crisis") so every device
+  sees the same plan.
+- An optional "Explain this plan" button that uses Claude, with an on-device fallback.
+
+Test it yourself: run the simulation, check the numbers go down after the plan, check the
+student banner, reset, and fix all console errors. Then push to GitHub and add this prompt,
+how it works, and any bugs to a "Surprise Hurdle" section in prompt.md.
+```
+
+### Prompt 8: v6, Claude decides the crisis plan (exact text, sent while v5 was being tested)
+
+```
+v6: use Claude for the crisis decisions.
+
+The API key is in .env as ANTHROPIC_API_KEY. Don't print it, don't put it in any frontend
+file and don't commit it. Make server.js load .env when running locally. On Vercel it comes
+from the environment variables.
+
+Add a new mode "crisis" to api/assistant.js:
+1. The browser sends the crisis situation as JSON: broken buses, the demand surge, the
+   blocked road and detour times, each trip's seats and riders, exam students with stop and
+   exam time, spare buses, and the greedy plan we already compute.
+2. Claude looks at it and decides: which bus replaces each broken one, which trips get the
+   extra buses, which students move to which bus or shared auto, and who gets priority.
+   It must reply with ONLY JSON: { assignments, busMoves, reasons, studentsMissingExam,
+   studentsWithoutTransport }.
+3. The server checks Claude's plan before using it: no bus over its seats, no broken bus
+   used, every exam student either placed or listed. If the check fails or there's no key,
+   use our greedy plan instead and say so.
+4. In Admin, show the greedy plan and Claude's plan side by side with the before/after
+   numbers. Pick whichever leaves fewer students missing their exam, and show Claude's
+   reasons in plain English.
+5. Show "Decided by Claude" or "Decided by on-device optimiser" on the plan and in the
+   student banner.
+
+Test it with the "Simulate exam day crisis" button, both with and without the key. Then
+add this prompt and the result to prompt.md.
+```
+
+### How it works
+
+**Shared state.** The admin action `crisis` (`api/data.js`, ops `set` / `simulate` / `reset`) stores the crisis on the server:
+- broken trips, surge %, spare buses, available shared autos;
+- the blocked road and OSRM detours;
+- which plan was chosen (`decision`) and Claude's validated decisions.
+
+Every device rebuilds **the same plan** from that state (`public/js/crisis.js`, deterministic). Simulated students are stored with `sim: true` and labelled "sim" everywhere. "Reset" removes them along with the crisis alerts.
+
+**The 4 problems:**
+
+| Problem | What RouteLess does |
+|---|---|
+| Bus breakdown | The admin ticks any trips as broken; they get 0 seats. Live Status shows **Broken down**, or **Replacement bus** once a bus is moved onto it. |
+| Demand surge | `Demand +%` (default 40) adds that many extra riders to **every** trip. |
+| Road blockage | The admin picks a road between two consecutive stops. Every route using it is flagged. **OSRM** `alternatives=3` is asked for a route avoiding the flooded spot (more than 0.8 km from the midpoint of the main road). If none avoids it, a **via-point detour** 2.8–5 km either side is tried. The extra minutes are shown. With no detour, the route can't be used, and its students go to other routes or shared autos. The map shows 🌊 and the red dashed detour. |
+| Exam students | "📝 I have an exam today" plus an exam time sits next to "I ride this bus". These students are seated first, earliest exam first, and must reach college 10 min before the exam. |
+
+**On-device optimiser (greedy).**
+1. **"Before"** = no plan: everyone waits for their own bus, first come first served.
+2. **Replacing broken buses:** depot spare buses first, then *donor* trips. A donor is an under-used trip (<40% full, no exam students) whose riders fit on its route's other trips. The trips with the most and earliest exam students are replaced first, at +15 min.
+3. **Seating:** every student in priority order takes the first of these that reaches college in time:
+   1. their own bus;
+   2. another bus at their stop (≤1.5 km);
+   3. a bus at a nearby stop (≤4 km);
+   4. a **shared-auto pod of 4**. Exam students' autos leave as early as needed, never before 06:00, and are limited by the number of autos available.
+   
+   If nothing reaches college in time, the earliest transport is used.
+
+**Claude decides (v6).**
+1. The browser builds a compact context for Claude:
+   - short ids (T1…, S1…) for trips and students;
+   - each trip's seats, broken / blocked-no-detour status, detour minutes, riders and exam riders;
+   - spare buses, autos and **donorCandidates**;
+   - for each student, their exam time, stop and **only the options they can physically use**: `[trip, board, arrive, note]`, where `ifReplaced` marks broken trips (counted with +15 min) and `nearby x km` marks a different stop. Their auto times are included too;
+   - the greedy plan and its results, as the baseline to beat.
+   
+   For the 120-student simulation this is 169 students (with the surge) and about 42 KB of JSON.
+2. **The request:** `api/assistant.js` mode **`crisis`** calls `claude-opus-5-5` (streamed, effort `medium`, structured JSON output with a schema, refusal fallback). If the API rejects the output format, it retries with "JSON only" instructions.
+3. **Server safety check** (`api/_crisisCheck.js`), before anything is used:
+   - depot buses ≤ spare;
+   - only allowed donors; moves only onto broken trips, at most once each;
+   - only reachable buses for each student;
+   - **no bus over its seats**;
+   - **no broken bus used unless replaced**;
+   - autos ≤ available, pods ≤ 4;
+   - **every exam student placed or listed** as missing their exam.
+   
+   The server **recomputes** the numbers itself; Claude's own counts are never trusted.
+4. **Choosing a plan:** the browser rebuilds Claude's plan and compares it with the greedy plan. **The one with fewer students missing their exam wins**; on a tie, fewer students without transport wins; on a full tie, Claude's plan is used because it explains its choices. If the check fails, the API errors, or there is no key, **the greedy plan is used, and the reason is shown**.
+5. **Display:** Admin shows both plans side by side (before → after numbers, bus moves, autos), Claude's reasons in plain English, and the safety-check result. The plan header and every student's red banner say **"🤖 Decided by Claude"** or **"⚙️ Decided by on-device optimiser"**. Students who register after Claude decided keep their on-device seat if that bus still has room.
+
+**Key handling:**
+- **Local:** `env.js`, imported first in `server.js`, loads `.env` with `process.loadEnvFile`.
+- **Vercel:** the key comes from the project's environment variables.
+- **Never exposed:** the key is never printed, appears in no frontend file (a source scan found no key material), and `.env` is git-ignored.
+
+### Results
+
+**v5, simulated crisis (no key):**
+- **The crisis:** 2 KSRTC trips broken, +40%, the B C Road ↔ Farangipete road flooded.
+- **Detour:** OSRM found a via-point detour, +22 min / +11.8 km.
+- **Students:** 120 simulated students, +49 surge riders, 49 with exams.
+- **Plan:** the depot bus replaces Puttur 07:25, 52 students move bus, and 2 shared-auto pods are used.
+
+| | Without plan | With plan |
+|---|---|---|
+| 📝 Students who would miss their exam | **26** | **0** |
+| 🚶 Students left without transport | **80** | **0** |
+
+A registered student on the broken Puttur 06:45 with a 09:00 exam saw: *"Your bus Puttur – Mangaluru (sample) 06:45 is broken down → take B.C. Road – Mangaluru (sample) 07:20 at 7:20, you'll reach by 7:59, before your 09:00 exam."* Reset cleared everything. The console was clean.
+
+**v6, tested both ways:**
+
+**Without the key** (second server on :5174 that ignores `.env`):
+- **Decision:** "⚙️ Decided by on-device optimiser: No ANTHROPIC_API_KEY on the server…", on the plan and in the banner. Claude's column says it was not asked.
+- **Numbers:** 26 → 0, 80 → 0.
+
+**With the key** (`.env` loaded): the key was read and the request was sent, but the Anthropic account has **no credit**. The API answered `400 "Your credit balance is too low to access the Anthropic API"`. The app did exactly what was asked: it kept the greedy plan live and showed "Claude API error: … So the on-device optimiser decided." **Claude's actual decision could not be observed** until credits are added.
+
+**Claude path verified without calling Claude.** A Node test ran the real browser code on the saved crisis:
+- **Valid answer:** a Claude-format answer passes the server check, and the server's numbers equal the greedy ones (0/0).
+- **Rebuild:** `applyClaude` reproduces them and is labelled `decidedBy: claude`.
+- **Rule violations rejected:** over capacity ("T7 over capacity: 87/55 seats"), a broken bus without a replacement, a dropped exam student, 60 autos when 10 exist, a bus that doesn't stop near the student, a fake donor, and a non-JSON reply.
+
+**UI with a stand-in reply** (marked `MOCK FOR TEST` in this browser tab only):
+- **Valid reply:** "🤖 Decided by Claude", the reasons, and the side-by-side view. 169 decisions were saved on the server. A fresh device showed the Claude-decided banner, and a student registering afterwards got a valid personal plan.
+- **Failed safety check:** the greedy plan was used and the errors were listed.
+
+The test data was then reset.
+
+### Bugs found and fixed during the Surprise Hurdle
+
+| # | Bug | Fix |
+|---|---|---|
+| 26 | v5 test: 8 exam students were still at risk although 10 autos were free. The shared auto could leave at most 2 hours before the exam, too late from far stops like Puttur (about 40 km). | An exam student's auto leaves as early as needed (never before 06:00): exam misses 8 → **0**. |
+| 27 | `crisis.js` counted "moved" students with a leftover `&& false` condition. | Counts `mode === "next"`. |
+| 28 | Old red crisis alerts would stay in the banner after "Reset crisis". | Crisis alerts are tagged `crisis: true`, and reset deletes them before posting one "crisis is over" alert. |
+| 29 | **Simulate hung forever** on a fresh origin: it started a second OpenStreetMap stops request while the first was still loading, and no external request had a timeout. | Simulate waits for the stops request already in flight (`stopsReady`). Every Overpass, OSRM and Nominatim call has a timeout (10–25 s) and falls back. |
+| 30 | **Claude was never called:** the SDK refuses a *non-streaming* request with `max_tokens: 32000` ("Streaming is required for operations that may take longer than 10 minutes"). | The crisis request is streamed: `messages.stream(...).finalMessage()`. |
+| 31 | Any 400 error (even "credit balance too low") triggered a pointless second "no-schema" request, and the saved reason was cut off mid-sentence. | The schema-less retry happens only when the 400 is about the output format. The server returns the API's plain message (`apiMessage`), and the note shows it in full. |
+| 32 | The new crisis card made the page 709px wide on phones: long road names in the blocked-road dropdown widened the grid column. | `minmax(0,1fr)` columns, `min-width:0` on grid cells, and the dropdown capped at 100%: back to 375px. |
+| 33 | Claude's plan only covers students registered when it decided; a later student would have had "no seat". | Late registrations keep their on-device seat if that bus still has room. |
+
+### Still open
+- **Claude's real decisions:** add credit to the Anthropic account, then press **Admin → 🤖 Ask Claude to decide** (or "Simulate exam day crisis") to see Claude's own plan, reasons and comparison. Everything around the call is built and tested.
+- **Vercel timeout:** `vercel.json` gives the Claude function `maxDuration: 300`, because a crisis decision can take 30–90 s. Vercel plans differ in the maximum they allow.
+
+---
+
+## 4. APIs and libraries used
+
+| API / library | Used for | Key needed? |
+|---|---|---|
+| **Anthropic Claude API** (`claude-opus-5-5`, official `@anthropic-ai/sdk`) | Student assistant, evidence letter, **AI route discovery with the `web_search_20260209` server tool**, "Explain this plan", and **v6 crisis decisions** (streamed, structured JSON output with a schema, validated on the server by `api/_crisisCheck.js`). Uses server-side refusal fallback (`fallbacks: "default"`), `stop_reason` refusal/max_tokens checks, and resumes on `pause_turn`. | Yes: `ANTHROPIC_API_KEY`, on the server only (`.env` locally, Vercel env vars in production) |
+| **OSRM** `alternatives` + via-point routes | Detours around a flooded road (Exam Day Crisis) | No |
+| **OpenStreetMap Overpass API** | Real bus stops and stations (Dakshina Kannada), plus taxi/auto stands near the student | No |
+| **OpenStreetMap Nominatim** | Village name → coordinates when no stop matches | No |
+| **OSRM** (`router.project-osrm.org`) | Real road geometry and stop-to-stop travel times for each route | No |
+| **Open-Meteo** | Live 6–9 am rain probability and temperature at the student's stop (a model feature) | No |
+| **Google Maps directions link** (`travelmode=transit`) | "Every bus Google Maps knows" from the student's stop | No |
+| **Upstash Redis REST** (on Vercel) / JSON file (locally) | Shared database for routes, reports, riders, alerts and operators | Vercel env vars |
+| **Leaflet 1.9.4 + OSM tiles**, **Chart.js 4.4.1** | Map and admin charts | No |
+| **Browser Notification API** | Alerts on the phone | No |
+
+**In-house AI (`public/js/model.js`):**
+- Bayesian MAP logistic regression for delay and cancellation risk;
+- a demand estimate from registered riders and "too full" reports;
+- a Beta-smoothed reliability score;
+- a greedy bus-allocation optimiser;
+- grouping riders into pods.
+
+---
+
+## 5. Where the data comes from (no fake data)
+
+| Data | Source |
+|---|---|
+| Bus stops | OpenStreetMap, loaded live |
+| Bus routes | Entered by the transport cell, or found by Claude with web search plus a cited source, or the **starter routes**. Starter routes use real places snapped to real OSM stops and real road times, but **sample departure times**: they are labelled "sample", and their source says to verify with the depot. |
+| Reports, riders and alerts | Real students and admins, through the shared database |
+| Weather | Open-Meteo, live |
+| Phone numbers | Only those an admin enters as verified operators. None are invented. |
+
+Honest limit: KSRTC and Mangaluru private buses publish **no open live-GPS or timetable API**. "Live status" therefore comes from crowd reports and transport-office overrides, and "every bus" is covered by the Google Maps transit link.
+
+---
+
+## 6. Run and deploy
+
+```bash
+npm install
+npm start                     # http://localhost:5173  (data saved in data/db.json)
+```
+Optional: put `ANTHROPIC_API_KEY=...` in a `.env` file (git-ignored, loaded by `env.js` for local runs) to enable the Claude features. Without it, the on-device assistant, letter template and greedy crisis optimiser are used.
+
+On Vercel:
+1. Import the repo with framework preset "Other". `vercel.json` sets the output directory to `public/`, and `api/` holds the two functions.
+2. Under Storage, connect **Upstash for Redis**. This adds `KV_REST_API_URL` and `KV_REST_API_TOKEN`; without them, data is not kept.
+3. Optionally add `ANTHROPIC_API_KEY`.
+4. **`ADMIN_PIN` is left unset on purpose** so the judges can open the Admin tab. Set it after the event to lock admin.

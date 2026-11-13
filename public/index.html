@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RouteLess — The Last Mile</title>
+  <meta name="description" content="Crowd-sourced, AI-powered rural bus reliability for students — real stops, real reports, live weather." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚌</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="logo">🚌</span><div><b>RouteLess</b><small>The Last Mile · AI rural transport</small></div></div>
+    <div class="topright">
+      <span id="liveChip" class="chip">● connecting…</span>
+      <span id="weatherChip" class="chip">☁️ loading weather…</span>
+      <div class="role" role="group" aria-label="Role">
+        <button data-role="student" class="on">Student</button>
+        <button data-role="admin">Admin</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="crisisBanner" class="banner crisis hidden"></div>
+  <div id="alertBanner" class="banner hidden"></div>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="home" class="on">🧭 Route Finder</button>
+    <button data-tab="status">📡 Live Status</button>
+    <button data-tab="report">✋ Report</button>
+    <button data-tab="alt">🛺 Alternatives</button>
+    <button data-tab="groups">👥 Groups</button>
+    <button data-tab="ask">🤖 Ask AI</button>
+    <button data-tab="alerts">🚨 Alerts <span id="alertCount" class="badge hidden"></span></button>
+    <button data-tab="admin" class="admin-only">📊 Admin</button>
+  </nav>
+
+  <main>
+    <!-- HOME -->
+    <section id="tab-home" class="tab on">
+      <div class="grid2">
+        <div>
+          <div class="card">
+            <h2>Find my bus to college</h2>
+            <div class="form">
+              <label>I'm <input id="pName" placeholder="Your name" /></label>
+              <label>My bus stop (OpenStreetMap)
+                <input id="pStop" list="stopList" placeholder="Type your stop / village…" autocomplete="off" />
+                <datalist id="stopList"></datalist>
+              </label>
+              <label>Reach college by <input id="pArrive" type="time" value="08:45" /></label>
+              <label>My usual bus <select id="pTrip"></select></label>
+            </div>
+            <div class="row gap examrow">
+              <label class="check"><input type="checkbox" id="pExam" /> 📝 I have an exam today</label>
+              <label class="check examtime">at <input type="time" id="pExamTime" value="09:30" /></label>
+            </div>
+            <div class="row gap">
+              <button id="riderBtn">✅ I ride this bus</button>
+              <a id="gmapsLink" target="_blank" rel="noopener"><button class="ghost" type="button">🗺️ All buses on Google Maps</button></a>
+            </div>
+            <p id="stopInfo" class="muted small"></p>
+          </div>
+          <div id="forecastHero" class="hero"></div>
+          <div class="card"><h3>Buses from <span id="fromName">your stop</span></h3><div id="options"></div></div>
+        </div>
+        <div>
+          <div class="card mapcard"><div id="map"></div><div id="mapLegend" class="legend"></div></div>
+          <div class="card whatif">
+            <h3>🔮 What-if</h3>
+            <p class="muted">The forecast uses the live rain forecast. Try other conditions:</p>
+            <div class="form">
+              <label>Rain <select id="wRain"><option value="live">Live forecast</option><option value="0">No rain</option><option value="0.5">Light (50%)</option><option value="1">Heavy rain</option></select></label>
+              <label>Day <select id="wDay"></select></label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STATUS -->
+    <section id="tab-status" class="tab">
+      <div class="card"><h2>Live bus status — today</h2>
+        <p class="muted">🟢 = confirmed by real student reports or the transport office today. 🔮 = no report yet, AI forecast shown. Updates every 20 s.</p>
+        <div id="statusList" class="statusgrid"></div>
+      </div>
+    </section>
+
+    <!-- REPORT -->
+    <section id="tab-report" class="tab">
+      <div class="card narrow">
+        <h2>Did your bus come?</h2>
+        <p class="muted">One tap. Every report is saved to the shared database, retrains the AI and becomes evidence for officials.</p>
+        <label class="full">Bus <select id="rTrip"></select></label>
+        <div class="reportbtns">
+          <button data-out="ontime" class="rb ok">✅<span>Came on time</span></button>
+          <button data-out="late" class="rb warn">⏱️<span>Came late</span></button>
+          <button data-out="noshow" class="rb bad">❌<span>Didn't come</span></button>
+          <button data-out="full" class="rb full">🈵<span>Too full to board</span></button>
+        </div>
+        <div id="reportMsg"></div>
+        <h3>Today's reports</h3><div id="todayReports"></div>
+      </div>
+    </section>
+
+    <!-- ALTERNATIVES -->
+    <section id="tab-alt" class="tab">
+      <div class="card"><h2>Alternative ways to college</h2><div id="altBody"></div></div>
+    </section>
+
+    <!-- GROUPS -->
+    <section id="tab-groups" class="tab">
+      <div class="card"><h2>Travel groups</h2>
+        <p class="muted">Registered students on the same bus whose stops are within ~1 km are grouped into pods of 4 (one shared auto). If the bus fails, the pod travels together.</p>
+        <label>Trip <select id="gTrip"></select></label>
+        <div id="groupBody"></div>
+      </div>
+    </section>
+
+    <!-- ASK -->
+    <section id="tab-ask" class="tab">
+      <div class="card narrow">
+        <h2>🤖 Ask RouteLess AI</h2>
+        <p class="muted">Claude (Anthropic API) answers using the live data in this app. If the server has no API key, the on-device assistant answers instead.</p>
+        <div class="suggest">
+          <button>Which bus should I take today?</button>
+          <button>Why is my bus risky today?</button>
+          <button>What do I do if my bus doesn't come?</button>
+          <button>Which route is the least reliable?</button>
+        </div>
+        <div id="chat" class="chat"></div>
+        <form id="askForm" class="askrow"><input id="askInput" placeholder="Ask anything about your commute…" /><button>Send</button></form>
+      </div>
+    </section>
+
+    <!-- ALERTS -->
+    <section id="tab-alerts" class="tab">
+      <div class="card narrow">
+        <h2>🚨 Emergency alerts</h2>
+        <button id="notifBtn" class="ghost">🔔 Enable notifications</button>
+        <form id="alertForm" class="admin-only alertform">
+          <select id="aLevel"><option value="high">🔴 Emergency</option><option value="med">🟠 Disruption</option><option value="low">🔵 Info</option></select>
+          <select id="aScope"></select>
+          <input id="aText" placeholder="e.g. Road blocked at Kalladka — buses diverted" required />
+          <button>Broadcast</button>
+        </form>
+        <div id="alertList"></div>
+      </div>
+    </section>
+
+    <!-- ADMIN -->
+    <section id="tab-admin" class="tab">
+      <div id="storageNote"></div>
+
+      <div class="card crisiscard" id="crisisCard">
+        <h3>🚨 Exam Day Crisis <span id="crisisState" class="pill p-info">off</span></h3>
+        <p class="muted small">Buses break down, demand surges, a road floods and students have exams within 2 hours. Set the crisis, and the optimiser re-plans every seat: exam students first, broken buses replaced, detours found, and nobody left without transport where possible.</p>
+        <div class="row gap">
+          <button id="simBtn">⚡ Simulate exam day crisis</button>
+          <button id="crisisResetBtn" class="ghost">Reset crisis</button>
+          <span id="simMsg" class="small"></span>
+        </div>
+        <div class="crisisgrid">
+          <div>
+            <h4>1 · Broken-down buses</h4>
+            <div id="cBroken" class="checklist"></div>
+          </div>
+          <div>
+            <h4>2 · Demand surge &amp; resources</h4>
+            <div class="form">
+              <label>Demand +% <input id="cSurge" type="number" min="0" max="300" value="40" /></label>
+              <label>Spare buses at depot <input id="cSpare" type="number" min="0" max="50" value="0" /></label>
+              <label>Shared autos available <input id="cAutos" type="number" min="0" max="200" value="10" /></label>
+            </div>
+            <h4>3 · Blocked road (flooding)</h4>
+            <div class="row gap"><select id="cBlock" style="flex:1"></select><button id="cDetourBtn" type="button">Find detour</button></div>
+            <div id="cDetour" class="small"></div>
+          </div>
+        </div>
+        <p class="small muted">4 · Exam students: students tick "I have an exam today" when they tap "I ride this bus"; they are seated first, earliest exam first.</p>
+        <div class="row gap"><button id="cApply">✅ Activate / update crisis plan</button><span id="cMsg" class="small"></span></div>
+        <div id="crisisPlan"></div>
+      </div>
+
+      <div id="kpis" class="kpis"></div>
+
+      <div class="card">
+        <h3>🚀 Quick start</h3>
+        <p class="muted small">Adds 4 routes between real places (Puttur, Vitla, Moodbidri, B.C. Road → Sahyadri College), routed on real roads. <b>Departure times are samples</b>; replace them with depot timings. No phone numbers are added.</p>
+        <button id="starterBtn">Load starter routes</button> <span id="starterMsg" class="small"></span>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <h3>➕ Add a real bus route</h3>
+          <p class="muted small">Pick stops from OpenStreetMap in travel order; the college is added as the last stop. Road distance and travel time come from OSRM.</p>
+          <div class="form">
+            <label>Route name / number <input id="nCode" placeholder="e.g. KSRTC Puttur–Mangaluru" /></label>
+            <label>Operator <select id="nOp"><option>KSRTC</option><option>Private</option><option>City bus</option><option>College bus</option></select></label>
+            <label>Seats <input id="nCap" type="number" value="55" min="10" max="120" /></label>
+            <label>Weekly market day on route <select id="nMarket"><option value="">none</option></select></label>
+          </div>
+          <label class="full">Add stop <span class="row gap"><input id="nStop" list="stopList" placeholder="Type a stop and press Add" style="flex:1" /><button id="nStopAdd" type="button">Add</button></span></label>
+          <div id="nStops" class="chips"></div>
+          <label class="full">Morning departure times from first stop (comma separated) <input id="nTimes" placeholder="07:10, 07:45" /></label>
+          <label class="full">Source (timetable link / depot / survey) <input id="nSrc" placeholder="https://… or 'Surveyed by transport cell'" /></label>
+          <button id="nSave">Save route</button> <span id="nMsg" class="small"></span>
+        </div>
+        <div class="card">
+          <h3>🔎 AI route discovery (Claude + web search)</h3>
+          <p class="muted small">Claude searches the web for real KSRTC / private buses from a village and cites its sources. Check them, then add them with one click.</p>
+          <div class="row gap"><input id="dFrom" placeholder="Village, e.g. Vitla" style="flex:1" /><button id="dBtn">Search</button></div>
+          <div id="dOut"></div>
+        </div>
+      </div>
+
+      <div class="card"><h3>Registered routes</h3><div class="tablewrap"><table id="routeTable"></table></div></div>
+
+      <div class="grid2">
+        <div class="card"><h3>Route reliability (last 30 days, real reports)</h3><canvas id="chRel" height="220"></canvas></div>
+        <div class="card"><h3>Estimated demand vs seats — today</h3><canvas id="chDemand" height="220"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>🚌 Smart bus allocation</h3>
+        <div class="row gap small"><label class="check">Spare buses at depot <input id="spare" type="number" min="0" max="50" value="0" class="mini" /></label>
+          <label class="check"><input type="checkbox" id="examWeek" /> Exam week (raises demand & delay risk)</label></div>
+        <div id="allocBody"></div>
+      </div>
+      <div class="card"><h3>All trips today</h3><div class="tablewrap"><table id="tripTable"></table></div></div>
+      <div class="grid2">
+        <div class="card"><h3>🧠 What the AI has learned so far</h3><canvas id="chW" height="230"></canvas><p id="modelInfo" class="muted small"></p></div>
+        <div class="card"><h3>📄 Evidence report for officials</h3>
+          <p class="muted">Turns real student reports into a formal request to the KSRTC depot.</p>
+          <div class="row gap"><select id="evRoute"></select><button id="evBtn">Generate letter (AI)</button></div>
+          <div id="evOut" class="letter"></div>
+        </div>
+      </div>
+      <div class="card"><h3>🛺 Verified local transport (added by transport cell)</h3>
+        <div class="form">
+          <label>Name <input id="oName" placeholder="Operator / driver name" /></label>
+          <label>Type <select id="oType"><option>Shared auto</option><option>Shared jeep</option><option>Taxi</option><option>Private bus</option><option>College van</option></select></label>
+          <label>Phone <input id="oPhone" placeholder="+91…" /></label>
+          <label>Area (stop) <input id="oArea" list="stopList" placeholder="Stop name" /></label>
+          <label>Approx. fare <input id="oCost" placeholder="₹40" /></label>
+        </div>
+        <button id="oSave">Add verified operator</button>
+        <div id="opList"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>RouteLess · Aerophilia 2K26 Prompt Battle · stops © OpenStreetMap contributors · routing OSRM · weather Open-Meteo · all routes and reports are entered by real users</footer>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/model.js"></script>
+  <script src="js/crisis.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

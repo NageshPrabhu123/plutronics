@@ -1,0 +1,17 @@
+{
+  "name": "routeless",
+  "version": "1.0.0",
+  "description": "RouteLess: The Last Mile - AI-powered rural bus reliability, demand prediction and alternative transport for students",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0"
+  },
+  "engines": {
+    "node": "22.x"
+  }
+}

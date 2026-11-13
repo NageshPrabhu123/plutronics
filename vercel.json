@@ -1,0 +1,7 @@
+{
+  "outputDirectory": "public",
+  "functions": {
+    "api/assistant.js": { "maxDuration": 300 },
+    "api/data.js": { "maxDuration": 15 }
+  }
+}
