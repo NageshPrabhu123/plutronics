@@ -33,6 +33,11 @@ export default async function handler(req, res) {
     if (role !== "student") return send(res, 400, { error: "Only students can sign up." });
     const email = normEmail(b.id), name = str(b.name, 40), password = String(b.password || "");
     if (!EMAIL_RE.test(email) || email.length > 120) return send(res, 400, { error: "Please enter a valid email address, e.g. asha@sahyadri.edu.in." });
+    // v10: only college emails (env ALLOWED_EMAIL_DOMAINS="sahyadri.edu.in,mite.ac.in"); unset = allow all
+    const allowed = String(process.env.ALLOWED_EMAIL_DOMAINS || "").split(",").map((d) => d.trim().toLowerCase().replace(/^@/, "")).filter(Boolean);
+    const domain = email.split("@")[1];
+    if (allowed.length && !allowed.some((d) => domain === d || domain.endsWith("." + d)))
+      return send(res, 403, { error: `Please sign up with your college email (${allowed.map((d) => "@" + d).join(" or ")}).` });
     if (name.length < 2) return send(res, 400, { error: "Please enter your name." });
     if (password.length < 6) return send(res, 400, { error: "Password must be at least 6 characters." });
     if (db.students[email]) return send(res, 409, { error: "This email is already registered. Log in instead." });

@@ -736,3 +736,37 @@ Anything else gets a help list instead of a wrong answer.
 this is overflowing
 ```
 **Fix:** links in chat replies become short clickable links ("Open in Google Maps ↗"), built as page elements rather than inserted HTML, so a reply can't inject markup. Chat bubbles also wrap long words (`overflow-wrap:anywhere`). **Tested:** the reply shows "Open in Google Maps ↗", the bubble stays inside the chat, and there is no sideways scroll.
+
+---
+
+## v10: Final fixes and push
+
+### Prompt 20 (exact text)
+```
+v10: final fixes, then push. No new features, we have a few minutes.
+
+1. Security bug: anyone with any email can sign up and send reports. Only allow college
+   emails. Add an env variable ALLOWED_EMAIL_DOMAINS (e.g. "sahyadri.edu.in,mite.ac.in")
+   and reject sign-ups from other domains with a clear message. Check it on the server,
+   not just in the form. If the variable isn't set, allow all emails so the demo can't
+   break.
+2. Make sure it deploys on Vercel: if maxDuration 300 in vercel.json isn't allowed on the
+   Hobby plan, lower it to 60, and on a timeout fall back to the optimiser instead of
+   showing an error.
+3. Run every flow once more (guest, student sign-up/login/report, admin, Simulate crisis,
+   Reset) and fix any console error.
+4. Set the git remote to https://github.com/NageshPrabhu123/plutronics.git and push to
+   main (force is fine, the GitHub repo only has a README). Check that .env is NOT pushed.
+5. Add this prompt to prompt.md.
+```
+
+### Result
+1. **College emails only:** `api/auth.js` checks the email domain **on the server** against `ALLOWED_EMAIL_DOMAINS` (comma-separated; subdomains such as `cs.sahyadri.edu.in` count). Other domains get **403** *"Please sign up with your college email (@sahyadri.edu.in or @mite.ac.in)."* If the variable is unset, all emails are allowed.
+2. **Vercel:** already done in v7. `vercel.json` gives the Claude function **60 s** (allowed on Hobby). The Claude crisis call stops after **50 s** and the on-device optimiser decides ("Claude did not answer in time…"), with no error; tested then against a stand-in API that never answers.
+3. **Every flow re-run, no console errors:**
+   - **Domain check (server):** `x@gmail.com` → 403; `a@cs.sahyadri.edu.in` → allowed; a guest report → 401.
+   - **Guest:** welcome page → Emergency access shows only the Alternatives tab.
+   - **Admin:** login → Load starter routes.
+   - **Student:** a `@gmail.com` sign-up is refused with the message above; a `@sahyadri.edu.in` sign-up works; then pick B C Road → report "late" (saved).
+   - **Crisis:** admin → Simulate exam day crisis (missing exam 29 → 0, without transport 93 → 0) → Reset (crisis off, 0 breakdowns, 0 simulated students).
+4. **Pushed** to `https://github.com/NageshPrabhu123/plutronics` (`main`). `.env`, `data/` and `node_modules` are not tracked.
