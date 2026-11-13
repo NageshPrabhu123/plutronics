@@ -680,3 +680,13 @@ So students now **log in with their email address** instead of their USN, and th
 remove college access code
 ```
 Student sign-up now needs only email, name and password (at least 6 characters, one account per email). The `STUDENT_CODE` check, its field in the sign-up form and its lockout were removed; `STUDENT_CODE` is no longer needed on Vercel. Wrong-password lockout (5 tries → 1 minute) still applies to login.
+
+### Prompt 15 (exact text)
+```
+there must be main page with attractive eyecatchy  login interface and what you made till now must be landing page after the login and also there must be alternative(emergency) login without id pass there must be alternative tab only
+```
+**What changed:**
+- **Welcome page first:** a full-screen page (teal gradient, glass cards, an animated bus on a road; animation is off for users who prefer reduced motion) with three choices: **🎓 Student** (log in or sign up with email), **🚌 Transport cell** (admin login) and **🆘 Emergency access** (no ID or password).
+- **After login:** the existing app is the landing page (students land on Route Finder, the transport cell on Admin). **Log out** returns to the welcome page.
+- **Emergency access shows only the Alternatives tab**, with its own "📍 Where are you?" box (type a stop, or use GPS to pick the nearest real OpenStreetMap stop). It lists other buses, nearby-stop buses, verified autos with call buttons, taxi stands and the Google Maps transit link. The top bar shows "🆘 Emergency access · Log in · Exit"; **Exit** returns to the welcome page. The choice lasts only for the browser session.
+- **Tested:** welcome page first; emergency shows only the `alt` tab and works for B C Road; Exit returns; student sign-up lands on Route Finder with all 7 student tabs; logout returns to the welcome page; phone layout stacks the cards; no console errors.

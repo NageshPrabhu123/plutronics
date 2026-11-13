@@ -3,7 +3,7 @@
 **Live app:** _link coming soon_ · **Prompts & iterations:** [prompt.md](prompt.md)
 
 ## ⏱ Demo in 2 minutes
-Works on a phone. Without logging in, anyone can use **guest emergency mode**: Route Finder, Live Status, Alternatives, Alerts, the crisis banner and on-device Ask AI. **Log in** (top bar) as the **🚌 Transport cell** with the admin ID and password from the server settings, or as a **🎓 Student** with email, name and password.
+Works on a phone. The app opens on a **welcome page**: choose **🎓 Student**, **🚌 Transport cell**, or **🆘 Emergency access** (no login, Alternatives tab only). **Log in** (top bar) as the **🚌 Transport cell** with the admin ID and password from the server settings, or as a **🎓 Student** with email, name and password.
 
 1. **Load starter routes.** Tap **Log in → 🚌 Transport cell**, then **Admin → 🚀 Load starter routes**. (Log out and **sign up as a student** for steps 2–3; log back in as the transport cell for steps 4–7.) This adds 4 real routes (Puttur, Vitla, Moodbidri, B.C. Road → Sahyadri College) on real roads; the timings are samples.
 2. **Pick a stop.** Tap **Student → My bus stop**, type `B C Road`, choose a Puttur bus, tick **📝 I have an exam today** (09:00) and tap **I ride this bus**. The forecast card shows the % chance the bus is late.

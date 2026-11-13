@@ -154,6 +154,39 @@ td button{padding:4px 10px!important;font-size:.8rem}
 .modal:not(.signup) .signup-only{display:none}
 .modal.admin .student-only{display:none}
 
+/* ---------- welcome front page ---------- */
+body.mode-welcome{overflow:hidden}
+body:not(.mode-welcome) .welcome{display:none}
+.welcome{position:fixed;inset:0;z-index:1500;overflow:auto;color:#fff;background:radial-gradient(1200px 600px at 10% -10%,#22d3ee55,transparent 60%),radial-gradient(900px 600px at 110% 110%,#f59e0b55,transparent 60%),linear-gradient(135deg,#064e3b,#0f766e 45%,#115e59)}
+.wl-bg{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.wl-road{position:absolute;left:-10%;right:-10%;bottom:14%;height:6px;background:repeating-linear-gradient(90deg,#fde68a 0 40px,transparent 40px 80px);opacity:.35}
+.wl-bus{position:absolute;bottom:calc(14% + 6px);font-size:3rem;animation:wlbus 9s linear infinite}
+@keyframes wlbus{from{left:-10%}to{left:105%}}
+.wl-dot{position:absolute;border-radius:50%;background:#fff;opacity:.08;animation:wlfloat 8s ease-in-out infinite}
+.wl-dot.d1{width:220px;height:220px;top:8%;right:6%}.wl-dot.d2{width:120px;height:120px;top:55%;left:5%;animation-delay:-3s}.wl-dot.d3{width:70px;height:70px;top:30%;left:40%;animation-delay:-5s}
+@keyframes wlfloat{50%{transform:translateY(-18px)}}
+@media (prefers-reduced-motion:reduce){.wl-bus,.wl-dot{animation:none}.wl-bus{left:70%}}
+.wl-inner{position:relative;max-width:980px;margin:0 auto;padding:7vh 20px 40px;min-height:100%;display:flex;flex-direction:column;justify-content:center}
+.wl-brand{display:flex;align-items:center;gap:14px}
+.wl-logo{font-size:3.2rem;filter:drop-shadow(0 6px 14px rgba(0,0,0,.3))}
+.wl-brand h1{margin:0;font-size:clamp(2.2rem,6vw,3.6rem);font-weight:800;letter-spacing:-.02em}
+.wl-brand p{margin:2px 0 0;opacity:.85;font-weight:500}
+.wl-tag{font-size:clamp(1.2rem,3vw,1.7rem);font-weight:700;line-height:1.35;margin:26px 0 30px;max-width:720px}
+.wl-tag span{display:block;font-size:1rem;font-weight:400;opacity:.85;margin-top:8px}
+.wl-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.wl-card{display:flex;flex-direction:column;align-items:flex-start;gap:6px;text-align:left;cursor:pointer;color:#fff;font:inherit;padding:22px 20px;border-radius:18px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.12);backdrop-filter:blur(8px);transition:transform .15s,background .15s,box-shadow .15s}
+.wl-card:hover,.wl-card:focus-visible{transform:translateY(-4px);background:rgba(255,255,255,.2);box-shadow:0 14px 30px rgba(0,0,0,.25);outline:none}
+.wl-card b{font-size:1.25rem}.wl-card small{opacity:.85;font-size:.9rem}
+.wl-ico{font-size:2.1rem}
+.wl-card.sos{background:linear-gradient(135deg,rgba(220,38,38,.55),rgba(249,115,22,.5));border-color:rgba(254,202,202,.5)}
+.wl-foot{margin-top:34px;font-size:.8rem;opacity:.65}
+@media (max-width:700px){.wl-cards{grid-template-columns:1fr}.wl-card{flex-direction:row;align-items:center;gap:14px;padding:16px}.wl-card b{display:block}.wl-card>span+b{margin-right:auto}}
+/* emergency access: Alternatives tab only */
+body.mode-emergency #tabs button:not([data-tab="alt"]){display:none}
+body.mode-emergency .tab:not(#tab-alt){display:none!important}
+body.mode-emergency #tab-alt{display:block}
+body:not(.mode-emergency) #altStopCard{display:none}
+
 /* ---------- phone layout (v3) ---------- */
 @media (max-width:640px){
   .topbar{padding:8px 12px;gap:6px 8px}

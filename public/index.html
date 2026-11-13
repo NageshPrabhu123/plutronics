@@ -21,6 +21,21 @@
     </div>
   </header>
 
+  <!-- Welcome / login front page (shown until you log in or choose emergency access) -->
+  <section id="welcome" class="welcome" aria-label="Welcome">
+    <div class="wl-bg" aria-hidden="true"><span class="wl-road"></span><span class="wl-bus">🚌</span><span class="wl-dot d1"></span><span class="wl-dot d2"></span><span class="wl-dot d3"></span></div>
+    <div class="wl-inner">
+      <div class="wl-brand"><span class="wl-logo">🚌</span><div><h1>RouteLess</h1><p>The Last Mile · AI rural transport</p></div></div>
+      <p class="wl-tag">Never wait an hour for a bus that never comes.<br><span>Live bus reliability, crowd reports, exam-day crisis plans, and rescue when a bus breaks down.</span></p>
+      <div class="wl-cards">
+        <button type="button" class="wl-card" data-wl="student"><span class="wl-ico">🎓</span><b>Student</b><small>Log in or sign up with your email</small></button>
+        <button type="button" class="wl-card" data-wl="admin"><span class="wl-ico">🚌</span><b>Transport cell</b><small>Admin login for the college</small></button>
+        <button type="button" class="wl-card sos" data-wl="emergency"><span class="wl-ico">🆘</span><b>Emergency access</b><small>No login: other buses, nearby stops, autos, taxi stands</small></button>
+      </div>
+      <p class="wl-foot">Sahyadri College, Adyar · stops © OpenStreetMap · weather Open-Meteo</p>
+    </div>
+  </section>
+
   <div id="crisisBanner" class="banner crisis hidden"></div>
   <div id="alertBanner" class="banner hidden"></div>
 
@@ -117,6 +132,10 @@
 
     <!-- ALTERNATIVES -->
     <section id="tab-alt" class="tab">
+      <div class="card" id="altStopCard"><h2>📍 Where are you?</h2>
+        <div class="row gap"><input id="altStop" list="stopList" placeholder="Type your bus stop / village…" autocomplete="off" style="flex:1" /><button id="altGps" type="button">📍 Use my location</button></div>
+        <p id="altStopInfo" class="muted small"></p>
+      </div>
       <div class="card"><h2>Alternative ways to college</h2><div id="altBody"></div></div>
     </section>
 

@@ -140,7 +140,7 @@
   let lgRole = "student", lgMode = "login";
   function renderUserChip() {
     const el = $("#userChip");
-    if (!ME) { el.className = "chip userchip guest"; el.innerHTML = `🆘 Guest: emergency mode <button type="button" id="ucLogin">Log in</button>`; $("#ucLogin").onclick = () => openLogin("student"); }
+    if (!ME) { el.className = "chip userchip guest"; el.innerHTML = `🆘 Emergency access <button type="button" id="ucLogin">Log in</button> <button type="button" id="ucExit">Exit</button>`; $("#ucLogin").onclick = () => openLogin("student"); $("#ucExit").onclick = () => setMode("welcome"); }
     else { el.className = "chip userchip"; el.innerHTML = `${ME.role === "admin" ? `🚌 Transport cell (${esc(ME.id)})` : `👤 ${esc(ME.name)} · ${esc(ME.id)} · Student`} <button type="button" id="ucLogout">Log out</button>`; $("#ucLogout").onclick = logout; }
     // students' name comes from their account
     if (isStudent()) { $("#pName").value = ME.name; $("#pName").disabled = true; P.profile.name = ME.name; } else $("#pName").disabled = false;
@@ -175,15 +175,26 @@
       const j = await RL.api.auth(body);
       RL.session.set(j.token); ME = RL.session.get(); aiAvailable = null;
       if (P.regUser !== ME.id) { P.registered = ""; P.myRid = null; P.regUser = ME.id; saveP(); }
-      $("#lgPass").value = ""; closeLogin(); renderUserChip();
+      $("#lgPass").value = ""; closeLogin(); renderUserChip(); setMode("app");
       await refresh(); await setRole(isAdmin() ? "admin" : "student");
     } catch (er) { $("#lgMsg").className = "lgmsg"; $("#lgMsg").textContent = er.message; }
     $("#lgSubmit").disabled = false;
   }
   function logout() {
     RL.session.clear(); ME = null; aiAvailable = null; P.registered = ""; P.myRid = null; P.regUser = null; saveP();
-    renderUserChip(); setRole("student"); refresh();
+    renderUserChip(); setRole("student"); setMode("welcome"); refresh();
   }
+  // front page → (login) full app, or (no login) emergency access with the Alternatives tab only
+  function setMode(m) {
+    if (ME) m = "app";
+    try { m === "emergency" ? sessionStorage.setItem("routeless.emergency", "1") : sessionStorage.removeItem("routeless.emergency"); } catch {}
+    document.body.classList.toggle("mode-welcome", m === "welcome");
+    document.body.classList.toggle("mode-emergency", m === "emergency");
+    if (m === "emergency") { showTab("alt"); $("#altStop").value = P.profile.stop ? P.profile.stop.name : ""; }
+    else if (m === "app" && !isAdmin()) showTab("home");
+    window.scrollTo(0, 0);
+  }
+  const startMode = () => { let e = false; try { e = sessionStorage.getItem("routeless.emergency") === "1"; } catch {} return ME ? "app" : e ? "emergency" : "welcome"; };
   function resolveStop(text) {
     text = (text || "").trim().toLowerCase(); if (!text) return null;
     return STOPS.find((s) => s.name.toLowerCase() === text) || STOPS.find((s) => s.name.toLowerCase().startsWith(text)) || STOPS.find((s) => s.name.toLowerCase().includes(text)) || null;
@@ -335,7 +346,7 @@
   // ---------- ALTERNATIVES ----------
   async function renderAlt() {
     const p = P.profile.stop;
-    if (!p) { $("#altBody").innerHTML = `<div class="empty">Set your bus stop in Route Finder first.</div>`; return; }
+    if (!p) { $("#altBody").innerHTML = `<div class="empty">${document.body.classList.contains("mode-emergency") ? "Type your stop above, or tap 📍 Use my location." : "Set your bus stop in Route Finder first."}</div>`; return; }
     const my = ROWS[P.profile.tripId];
     const others = rankOptions(p).filter((o) => o.t.id !== P.profile.tripId).slice(0, 4);
     const nearby = RL.ROUTES.filter((r) => { const n = nearestIdx(r, p); return n.km > 1.5 && n.km <= 4 && n.i < r.stops.length - 1; })
@@ -989,12 +1000,27 @@ ${x.after.examMiss ? `Still at risk: ${x.after.examMiss} exam student(s). Ask th
   $("#loginModal").onclick = (e) => { if (e.target.id === "loginModal") closeLogin(); };
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLogin(); });
   $("#gateLogin").onclick = () => openLogin("student");
+  // welcome page choices
+  $$("[data-wl]").forEach((b) => (b.onclick = () => (b.dataset.wl === "emergency" ? setMode("emergency") : openLogin(b.dataset.wl))));
+  // emergency access: pick where you are (typed stop or GPS → nearest real stop)
+  $("#altStop").onchange = async (e) => { const s = await resolveOrGeocode(e.target.value); if (s) { setStop(s); $("#altStopInfo").textContent = `📍 ${s.name}`; renderAlt(); } else $("#altStopInfo").textContent = "Couldn't find that place. Try a nearby bus stop name."; };
+  $("#altGps").onclick = () => {
+    if (!navigator.geolocation) { $("#altStopInfo").textContent = "Location isn't available on this device: type your stop."; return; }
+    $("#altStopInfo").textContent = "Finding you…";
+    navigator.geolocation.getCurrentPosition((p) => {
+      const me = { lat: p.coords.latitude, lng: p.coords.longitude };
+      const s = STOPS.slice().sort((a, b) => RL.haversine(a, me) - RL.haversine(b, me))[0];
+      if (!s) { $("#altStopInfo").textContent = "Bus stops are still loading; try again in a moment."; return; }
+      setStop(s); $("#altStop").value = s.name; $("#altStopInfo").textContent = `📍 Nearest stop: ${s.name} (${RL.haversine(s, me).toFixed(1)} km)`; renderAlt();
+    }, () => { $("#altStopInfo").textContent = "Location permission denied: type your stop instead."; }, { timeout: 8000 });
+  };
   renderUserChip();
   wire(); renderAll();
   addMsg("a", "Hi! Set your bus stop, then ask me which bus to take, why it's risky, or what to do if it doesn't come.");
   stopsReady = RL.loadStops().then((s) => { STOPS = s; $("#stopList").innerHTML = s.map((x) => `<option value="${esc(x.name)}">`).join(""); renderAll(); })
     .catch(() => { $("#stopInfo").textContent = "OpenStreetMap stops couldn't load — you can still type a village name."; });
   loadWeather();
-  refresh().then(() => setRole(P.role === "admin" && isAdmin() ? "admin" : "student"));
+  setMode(startMode());
+  refresh().then(() => { setRole(P.role === "admin" && isAdmin() ? "admin" : "student"); setMode(startMode()); });
   setInterval(refresh, 20000);
 })();
