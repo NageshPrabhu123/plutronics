@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import assistant from "./api/assistant.js";
 import data from "./api/data.js";
+import auth from "./api/auth.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const pub = path.join(here, "public");
@@ -16,6 +17,7 @@ http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://x");
   if (url.pathname === "/api/assistant") return assistant(req, res);
   if (url.pathname === "/api/data") return data(req, res);
+  if (url.pathname === "/api/auth") return auth(req, res);
   let p = path.normalize(path.join(pub, decodeURIComponent(url.pathname)));
   if (!p.startsWith(pub)) { res.statusCode = 403; return res.end(); }
   if (url.pathname.endsWith("/")) p = path.join(p, "index.html");

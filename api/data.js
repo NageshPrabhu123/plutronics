@@ -1,8 +1,11 @@
 // GET  /api/data  → shared live state (routes, today's + recent reports, alerts, riders, crisis…)
-// POST /api/data  → {action, ...}  student actions: report, rider, autoAlert
-//                                   admin actions (need ADMIN_PIN if set): addRoute, deleteRoute, override, alert, config, addOperator, deleteOperator,
+// POST /api/data  → {action, ...}  every POST needs "Authorization: Bearer <token>" from /api/auth (else 401)
+//                                   student token: report, rider, breakdown (identity = email from the token)
+//                                   any token: autoAlert
+//                                   admin token: addRoute, deleteRoute, override, alert, config, addOperator, deleteOperator, deleteStudent,
 //                                   crisis {op: "set" | "simulate" | "reset"}  — Exam Day Crisis mode, shared by every device
 import { load, save, send, readJson, istDate, storageKind, emptyCrisis } from "./_store.js";
+import { userFrom } from "./_auth.js";
 
 const OUTCOMES = ["ontime", "late", "noshow", "full"];
 const str = (s, n = 120) => String(s ?? "").trim().slice(0, n);
@@ -45,30 +48,41 @@ function cleanCrisis(c = {}) {
   };
 }
 
-function publicView(db) {
+// v9: guests (no token) get everything needed in an emergency, but no student names
+function publicView(db, user) {
   const today = istDate();
   const since = istDate(Date.now() - 120 * 864e5);
   return {
-    routes: db.routes, reports: db.reports.filter((r) => r.date >= since).map(({ clientId, ...r }) => r),
+    routes: db.routes, reports: db.reports.filter((r) => r.date >= since).map(({ clientId, ...r }) => (user ? r : { ...r, by: "student" })),
     alerts: db.alerts.filter((a) => a.ts > Date.now() - 3 * 864e5),
     overrides: db.overrides[today] || {}, operators: db.operators, config: db.config,
-    riders: Object.values(db.riders).map(({ clientId, ...r }) => ({ ...r, name: r.name.split(" ")[0] })),
+    riders: Object.values(db.riders).map(({ clientId, ...r }) => ({ ...r, name: user ? r.name.split(" ")[0] : r.sim ? r.name : "Student" })),
     crisis: db.crisis || emptyCrisis(),
-    breakdownReports: (db.breakdownReports || []).filter((r) => r.ts > Date.now() - 3 * 3600e3).map(({ clientId, ...r }) => r),
-    today, storage: storageKind, adminLocked: !!process.env.ADMIN_PIN, serverTime: Date.now(),
+    breakdownReports: (db.breakdownReports || []).filter((r) => r.ts > Date.now() - 3 * 3600e3).map(({ clientId, by, ...r }) => (user ? { ...r, by } : r)),
+    ...(user && user.role === "admin" ? { students: Object.entries(db.students || {}).map(([id, s]) => ({ email: s.email || id, name: s.name, createdAt: s.createdAt })).sort((a, b) => a.email.localeCompare(b.email)) } : {}),
+    me: user ? { id: user.sub, name: user.name, role: user.role } : null,
+    today, storage: storageKind, serverTime: Date.now(),
   };
 }
+
+const STUDENT_ACTIONS = new Set(["report", "rider", "breakdown"]);
+const ANY_USER_ACTIONS = new Set(["autoAlert"]);
 
 export default async function handler(req, res) {
   let db;
   try { db = await load(); } catch (e) { return send(res, 503, { error: "Database temporarily unavailable, please retry" }); }
-  if (req.method === "GET") return send(res, 200, publicView(db));
+  const user = userFrom(req, db);
+  if (req.method === "GET") return send(res, 200, publicView(db, user));
   if (req.method !== "POST") return send(res, 405, { error: "GET or POST" });
   let b; try { b = await readJson(req); } catch { return send(res, 400, { error: "bad json" }); }
-  const admin = !process.env.ADMIN_PIN || b.pin === process.env.ADMIN_PIN;
-  const needAdmin = () => { if (!admin) { send(res, 403, { error: "Wrong admin PIN" }); return true; } return false; };
+  // v9: every POST needs a valid login; student actions need a student, everything else needs the transport cell
+  if (!user) return send(res, 401, { error: "Please log in (guests can view, but not change anything)." });
+  if (STUDENT_ACTIONS.has(b.action) && user.role !== "student") return send(res, 401, { error: "Log in with your student email to do this." });
+  if (!STUDENT_ACTIONS.has(b.action) && !ANY_USER_ACTIONS.has(b.action) && user.role !== "admin") return send(res, 401, { error: "Transport cell (admin) login required." });
+  const needAdmin = () => false; // role already checked above
   const route = db.routes.find((r) => r.id === b.routeId);
   let myRid = null;
+  if (STUDENT_ACTIONS.has(b.action)) { b.clientId = user.sub; b.name = user.name; } // identity comes from the token, never the client
 
   switch (b.action) {
     case "report": {
@@ -177,11 +191,15 @@ export default async function handler(req, res) {
       if (needAdmin()) return;
       db.operators = db.operators.filter((o) => o.id !== b.id);
       break;
-    case "checkPin":
-      return send(res, admin ? 200 : 403, { ok: admin });
+    case "deleteStudent": { // v9: transport cell removes a student account (and their rider registration)
+      const id = String(b.email || "").trim().toLowerCase();
+      if (!db.students || !db.students[id]) return send(res, 404, { error: "No such student" });
+      delete db.students[id]; delete db.riders[id];
+      break;
+    }
     default:
       return send(res, 400, { error: "unknown action" });
   }
   try { await save(db); } catch (e) { return send(res, 500, { error: String(e.message) }); }
-  return send(res, 200, myRid ? { ...publicView(db), myRid } : publicView(db));
+  return send(res, 200, myRid ? { ...publicView(db, user), myRid } : publicView(db, user));
 }

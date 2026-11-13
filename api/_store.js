@@ -14,7 +14,7 @@ const FILE = process.env.DATA_FILE || (process.env.VERCEL ? "/tmp/routeless-db.j
 export const storageKind = URL_ ? "upstash" : process.env.VERCEL ? "ephemeral" : "file";
 
 export const emptyCrisis = () => ({ active: false, simulated: false, broken: [], surgePct: 40, autos: 10, spare: 0, blocked: null, detours: {}, startedAt: null, midway: [] });
-export const emptyDb = () => ({ routes: [], reports: [], alerts: [], overrides: {}, riders: {}, operators: [], config: { examWeek: false, spare: 0 }, crisis: emptyCrisis(), breakdownReports: [] });
+export const emptyDb = () => ({ routes: [], reports: [], alerts: [], overrides: {}, riders: {}, operators: [], config: { examWeek: false, spare: 0 }, crisis: emptyCrisis(), breakdownReports: [], students: {}, loginFails: {} });
 
 // A failed READ must never look like an empty database — otherwise the next write would wipe all data.
 // Only "key not set yet" (Upstash) or "file not created yet" (local) count as empty.

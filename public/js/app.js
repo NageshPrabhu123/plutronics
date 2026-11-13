@@ -121,9 +121,68 @@
     }
     renderAll();
   }
-  async function post(body, { admin = false } = {}) {
-    if (admin) body.pin = P.pin;
-    ingest(await RL.api.post(body)); renderAll(); return DB;
+  async function post(body) {
+    try { ingest(await RL.api.post(body)); }
+    catch (e) {
+      if (e.status === 401 && ME && !RL.session.get()) { logout(); openLogin(ME.role, "Your session expired. Please log in again."); }
+      else if (e.status === 401) openLogin(/admin/i.test(e.message) ? "admin" : "student", e.message);
+      throw e;
+    }
+    renderAll(); return DB;
+  }
+
+  // ---------- v9: login (email + password for students, ADMIN_ID / ADMIN_PASSWORD for the transport cell) ----------
+  let ME = RL.session.get();
+  const isStudent = () => !!(ME && ME.role === "student");
+  const isAdmin = () => !!(ME && ME.role === "admin");
+  // the rider registration belongs to the account that made it
+  if (P.regUser !== (ME && ME.id)) { P.registered = ""; P.myRid = null; P.regUser = ME ? ME.id : null; saveP(); }
+  let lgRole = "student", lgMode = "login";
+  function renderUserChip() {
+    const el = $("#userChip");
+    if (!ME) { el.className = "chip userchip guest"; el.innerHTML = `🆘 Guest: emergency mode <button type="button" id="ucLogin">Log in</button>`; $("#ucLogin").onclick = () => openLogin("student"); }
+    else { el.className = "chip userchip"; el.innerHTML = `${ME.role === "admin" ? `🚌 Transport cell (${esc(ME.id)})` : `👤 ${esc(ME.name)} · ${esc(ME.id)} · Student`} <button type="button" id="ucLogout">Log out</button>`; $("#ucLogout").onclick = logout; }
+    // students' name comes from their account
+    if (isStudent()) { $("#pName").value = ME.name; $("#pName").disabled = true; P.profile.name = ME.name; } else $("#pName").disabled = false;
+  }
+  function setLgUi() {
+    const m = $("#loginModal");
+    m.classList.toggle("signup", lgRole === "student" && lgMode === "signup"); m.classList.toggle("admin", lgRole === "admin");
+    $$("[data-lg]").forEach((b) => b.classList.toggle("on", b.dataset.lg === lgRole));
+    $("#loginTitle").textContent = lgRole === "admin" ? "Transport cell login" : lgMode === "signup" ? "Student sign-up" : "Student login";
+    $("#lgIdLabel").textContent = lgRole === "admin" ? "Admin ID" : "Email";
+    $("#lgId").type = lgRole === "admin" ? "text" : "email";
+    $("#lgId").autocomplete = lgRole === "admin" ? "username" : "email";
+    $("#lgId").placeholder = lgRole === "admin" ? "Admin ID" : "you@college.edu";
+    $("#lgPass").autocomplete = lgMode === "signup" ? "new-password" : "current-password";
+    $("#lgPass").placeholder = lgMode === "signup" ? "At least 6 characters" : "";
+    $("#lgName").required = $("#lgCode").required = lgRole === "student" && lgMode === "signup";
+    $("#lgSubmit").textContent = lgMode === "signup" && lgRole === "student" ? "Create account" : "Log in";
+    $("#lgToggle").textContent = lgMode === "signup" ? "Already registered? Log in" : "New student? Sign up with your email";
+  }
+  function openLogin(role = "student", msg = "") {
+    lgRole = role; lgMode = "login"; setLgUi();
+    $("#lgMsg").className = "lgmsg"; $("#lgMsg").textContent = msg; $("#lgPass").value = "";
+    $("#loginModal").classList.remove("hidden"); setTimeout(() => $("#lgId").focus(), 50);
+  }
+  const closeLogin = () => $("#loginModal").classList.add("hidden");
+  async function submitLogin(e) {
+    e.preventDefault();
+    const body = { action: lgRole === "student" && lgMode === "signup" ? "signup" : "login", role: lgRole, id: $("#lgId").value.trim(), password: $("#lgPass").value, name: $("#lgName").value.trim(), code: $("#lgCode").value.trim() };
+    if (body.action === "signup" && body.password.length < 6) { $("#lgMsg").textContent = "Password must be at least 6 characters."; return; }
+    $("#lgSubmit").disabled = true; $("#lgMsg").className = "lgmsg ok"; $("#lgMsg").textContent = body.action === "signup" ? "Creating your account…" : "Checking…";
+    try {
+      const j = await RL.api.auth(body);
+      RL.session.set(j.token); ME = RL.session.get(); aiAvailable = null;
+      if (P.regUser !== ME.id) { P.registered = ""; P.myRid = null; P.regUser = ME.id; saveP(); }
+      $("#lgPass").value = ""; $("#lgCode").value = ""; closeLogin(); renderUserChip();
+      await refresh(); await setRole(isAdmin() ? "admin" : "student");
+    } catch (er) { $("#lgMsg").className = "lgmsg"; $("#lgMsg").textContent = er.message; }
+    $("#lgSubmit").disabled = false;
+  }
+  function logout() {
+    RL.session.clear(); ME = null; aiAvailable = null; P.registered = ""; P.myRid = null; P.regUser = null; saveP();
+    renderUserChip(); setRole("student"); refresh();
   }
   function resolveStop(text) {
     text = (text || "").trim().toLowerCase(); if (!text) return null;
@@ -142,7 +201,7 @@
     const opts = rankOptions(p);
     if (opts.length && !opts.some((o) => o.t.id === P.profile.tripId)) { P.profile.tripId = opts[0].t.id; saveP(); }
     $("#pTrip").innerHTML = opts.length ? opts.slice().sort((a, b) => a.dep - b.dep).map((o) => `<option value="${esc(o.t.id)}" ${o.t.id === P.profile.tripId ? "selected" : ""}>${esc(o.row.route.code)} · ${RL.fmt(o.dep)} from your stop</option>`).join("") : `<option value="">— no registered bus near this stop —</option>`;
-    $("#riderBtn").textContent = P.registered && P.registered === P.profile.tripId ? "✔ Registered (tap to remove)" : "✅ I ride this bus";
+    $("#riderBtn").textContent = !isStudent() ? "🔒 Log in to register as a rider" : P.registered && P.registered === P.profile.tripId ? "✔ Registered (tap to remove)" : "✅ I ride this bus";
     const hero = $("#forecastHero");
     if (!p) {
       hero.className = "hero"; hero.innerHTML = `<div class="big">Pick your bus stop to get today's forecast.</div><div class="sub">${STOPS.length ? STOPS.length + " real bus stops loaded from OpenStreetMap. Type your stop above or tap a dot on the map." : "Loading real bus stops from OpenStreetMap…"}</div>`;
@@ -246,6 +305,8 @@
 
   // ---------- REPORT ----------
   function renderReport() {
+    // v9: only logged-in students can report (the server enforces this too)
+    $("#reportGate").classList.toggle("hidden", isStudent()); $("#reportBody").classList.toggle("hidden", !isStudent());
     const near = new Set(tripsNear(P.profile.stop, 3).map((t) => t.id));
     const list = RL.TRIPS.slice().sort((a, b) => (near.has(b.id) - near.has(a.id)) || a.time.localeCompare(b.time));
     const sel = $("#rTrip"); const had = sel.value;
@@ -316,6 +377,7 @@
 
   // ---------- ALERTS ----------
   async function autoAlert(level, scope, text, key) {
+    if (!ME) return; // guests can't post (server would answer 401)
     if (P.posted.includes(key) || DB.alerts.some((a) => a.key === key)) return;
     P.posted.push(key); P.posted = P.posted.slice(-200); saveP();
     try { await post({ action: "autoAlert", level, scope, text, key }); } catch {}
@@ -350,7 +412,12 @@
   function renderAdmin() {
     if (!document.body.classList.contains("admin") || !$("#tab-admin").classList.contains("on")) return;
     const sk = { upstash: ["ok", "✔ Shared cloud database (Upstash Redis) connected — every student sees the same live data."], file: ["ok", "✔ Database file data/db.json on this server — shared by everyone using it."], ephemeral: ["", "⚠ No permanent database on this deployment. Connect Upstash Redis in Vercel (Storage → Upstash for Redis) so reports are kept."] }[DB.storage] || ["", "⚠ Server offline — showing last loaded data."];
-    $("#storageNote").innerHTML = `<div class="note ${online ? sk[0] : ""}">${online ? sk[1] : "⚠ Server offline — showing last loaded data."}${online && !DB.adminLocked ? " · Admin is open (no ADMIN_PIN set); set ADMIN_PIN on the server to lock it." : ""}</div>`;
+    $("#storageNote").innerHTML = `<div class="note ${online ? sk[0] : ""}">${online ? sk[1] : "⚠ Server offline — showing last loaded data."}${online ? ` · Logged in as transport cell (${esc(ME ? ME.id : "")}).` : ""}</div>`;
+    // v9: registered students (email, name, date; never any password data)
+    const studs = DB.students || [];
+    $("#studentTable").innerHTML = studs.length ? `<tr><th>Email</th><th>Name</th><th>Registered</th><th></th></tr>` + studs.map((s) => `<tr><td><b>${esc(s.email)}</b></td><td>${esc(s.name)}</td><td>${new Date(s.createdAt).toLocaleDateString()}</td><td><button data-delstu="${esc(s.email)}">Remove</button></td></tr>`).join("") : `<tr><td class="muted">No students have signed up yet.</td></tr>`;
+    labelTable($("#studentTable"));
+    $$("[data-delstu]").forEach((b) => (b.onclick = async () => { if (confirm(`Remove student ${b.dataset.delstu}? Their account and rider registration are deleted; they can sign up again with the access code.`)) { try { await post({ action: "deleteStudent", email: b.dataset.delstu }); } catch (e) { alert(e.message); } } }));
     const rows = Object.values(ROWS);
     $("#kpis").innerHTML = [[DB.routes.length, "registered routes"], [RL.TRIPS.length, "morning trips"], [DB.riders.length, "registered riders"], [DB.reports.length, "real reports (120 d)"], [todayReports().length, "reports today"], [rows.filter((r) => r.pred.p >= 0.6).length, "high-risk trips"]]
       .map(([b, s]) => `<div class="kpi"><b>${b}</b><span>${s}</span></div>`).join("");
@@ -439,7 +506,7 @@
     $("#dOut").innerHTML = `<p class="muted small">Claude is searching the web for buses from ${esc(from)}… (20–60 s)</p>`;
     try {
       if (!(await aiReady())) throw new Error("no key");
-      const r = await fetch("api/assistant", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "discover", from, to: RL.COLLEGE.name + ", Mangaluru" }) });
+      const r = await fetch("api/assistant", { method: "POST", headers: { "Content-Type": "application/json", ...RL.authHeaders() }, body: JSON.stringify({ mode: "discover", from, to: RL.COLLEGE.name + ", Mangaluru" }) });
       const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.status);
       const list = j.services || [];
       $("#dOut").innerHTML = list.length ? list.map((s, i) => `<div class="disc"><b>${esc(s.code)}</b> · ${esc(s.operator)}<br>${esc((s.via || []).join(" → "))}<br>Departures: ${esc((s.departures || []).join(", ") || s.frequency || "not found")}<br>Source: ${s.source ? `<a href="${esc(s.source)}" target="_blank" rel="noopener">${esc(s.source)}</a>` : "–"}<br><button data-use="${i}">Review & add</button></div>`).join("") : `<p class="muted small">No reliable sources found for ${esc(from)}. Add the route manually.</p>`;
@@ -480,12 +547,13 @@
   }
   let aiAvailable = null; // checked once, so a server without a key never produces failing requests
   async function aiReady() {
+    if (!ME) return false; // guests: on-device answers only
     if (aiAvailable === null) { try { aiAvailable = !!(await (await fetch("api/assistant", { cache: "no-store" })).json()).available; } catch { aiAvailable = false; } }
     return aiAvailable;
   }
   async function callAI(mode, payload) {
-    if (!(await aiReady())) throw new Error("Cloud AI not configured (no ANTHROPIC_API_KEY on the server)");
-    const res = await fetch("api/assistant", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode, ...payload }) });
+    if (!(await aiReady())) throw new Error(ME ? "Cloud AI not configured (no ANTHROPIC_API_KEY on the server)" : "Log in to use Claude");
+    const res = await fetch("api/assistant", { method: "POST", headers: { "Content-Type": "application/json", ...RL.authHeaders() }, body: JSON.stringify({ mode, ...payload }) });
     const j = await res.json().catch(() => ({})); if (!res.ok || !j.answer) throw new Error(j.error || "ai " + res.status); return j;
   }
   function addMsg(cls, text, src) {
@@ -496,7 +564,7 @@
   async function ask(q) {
     if (!q.trim()) return; addMsg("u", q); const pending = addMsg("a", "Thinking…");
     try { const j = await callAI("chat", { question: q, context: aiContext() }); pending.remove(); addMsg("a", j.answer, "Claude · " + (j.model || "Anthropic API")); }
-    catch { pending.remove(); addMsg("a", localAnswer(q), "On-device assistant (cloud AI unavailable)"); }
+    catch { pending.remove(); addMsg("a", localAnswer(q), ME ? "On-device assistant (cloud AI unavailable)" : "On-device assistant · log in to ask Claude"); }
   }
   function evidenceStats(rid) {
     const r = RL.R[rid]; const rep = DB.reports.filter((x) => x.routeId === rid);
@@ -561,7 +629,7 @@
   }
   async function midwayAlert(m) {
     const t = RL.T[m.tripId]; if (!t) return;
-    try { await RL.api.post({ action: "alert", crisis: true, pin: P.pin, level: "high", scope: t.routeId, text: `🛠 ${tripLabel(t)} broke down ON THE WAY ${m.place} at ${RL.fmt(m.at)}${DB.crisis.simulated ? " (SIMULATED)" : ""}. Students on board: stay together at the bus — your rescue plan is in RouteLess. Students at later stops: check your new plan.` }); } catch {}
+    try { await RL.api.post({ action: "alert", crisis: true, level: "high", scope: t.routeId, text: `🛠 ${tripLabel(t)} broke down ON THE WAY ${m.place} at ${RL.fmt(m.at)}${DB.crisis.simulated ? " (SIMULATED)" : ""}. Students on board: stay together at the bus — your rescue plan is in RouteLess. Students at later stops: check your new plan.` }); } catch {}
   }
   function renderMidwayAdmin() {
     const box = $("#cMidway"); if (!box) return;
@@ -691,7 +759,7 @@
       let j;
       try {
         // server gives Claude 50 s; the browser waits at most 58 s (Vercel stops functions at 60 s)
-        const r = await fetch("api/assistant", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "crisis", context: ctx }), signal: AbortSignal.timeout(58000) });
+        const r = await fetch("api/assistant", { method: "POST", headers: { "Content-Type": "application/json", ...RL.authHeaders() }, body: JSON.stringify({ mode: "crisis", context: ctx }), signal: AbortSignal.timeout(58000) });
         j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || "HTTP " + r.status);
       } catch (e) {
         if (e.name === "TimeoutError" || e.name === "AbortError" || /HTTP 504/.test(e.message)) {
@@ -740,7 +808,7 @@
       msgs.push({ level: "high", scope: t.routeId, text: `${tripLabel(t)} has BROKEN DOWN${sim}. ${rep ? `A ${rep.from.split(" (")[0]} replaces it (+15 min).` : "Riders are moved to other buses or shared autos."} Check your plan.` }); });
     PLAN.blockedRoutes.forEach((id) => { const d = c.detours?.[id];
       msgs.push({ level: "high", scope: id, text: `Road flooded between ${c.blocked.a.name} and ${c.blocked.b.name}${sim}. ${RL.R[id].code}: ${d && d.found ? `detour adds about ${d.extraMin} min` : "cannot pass; you are re-routed"}. Check your plan.` }); });
-    for (const m of msgs) { try { await RL.api.post({ action: "alert", crisis: true, pin: P.pin, ...m }); } catch {} }
+    for (const m of msgs) { try { await RL.api.post({ action: "alert", crisis: true, ...m }); } catch {} }
     await refresh();
   }
   async function simulateCrisis() {
@@ -782,7 +850,7 @@
     try {
       const was = planOn();
       await post({ action: "crisis", op: "reset" }, { admin: true }); cdDirty = false; CD = null; lastExplain = "";
-      if (was) { try { await RL.api.post({ action: "alert", level: "low", scope: "all", text: "✅ The Exam Day Crisis is over. Normal timetable restored.", pin: P.pin }); } catch {} await refresh(); }
+      if (was) { try { await RL.api.post({ action: "alert", level: "low", scope: "all", text: "✅ The Exam Day Crisis is over. Normal timetable restored." }); } catch {} await refresh(); }
       $("#simMsg").textContent = "Crisis reset; simulated students removed.";
     } catch (e) { $("#simMsg").textContent = "✖ " + e.message; }
   }
@@ -837,12 +905,9 @@ ${x.after.examMiss ? `Still at risk: ${x.after.examMiss} exam student(s). Ask th
     if (name === "home" && map) setTimeout(() => map.invalidateSize(), 50);
   }
   async function setRole(r) {
-    if (r === "admin" && DB.adminLocked) {
-      const pin = P.pin || prompt("Transport-cell admin PIN"); if (!pin) return;
-      try { await RL.api.post({ action: "checkPin", pin }); P.pin = pin; } catch { P.pin = ""; saveP(); alert("Wrong PIN"); return; }
-    }
+    if (r === "admin" && !isAdmin()) { openLogin("admin", ME ? "The Admin view needs a transport cell login." : ""); r = "student"; }
     P.role = r; saveP(); document.body.classList.toggle("admin", r === "admin");
-    $$(".role button").forEach((b) => b.classList.toggle("on", b.dataset.role === r));
+    $$(".role button[data-role]").forEach((b) => b.classList.toggle("on", b.dataset.role === r)); // not the login modal's tabs
     if (r === "admin") showTab("admin"); else if ($("#tab-admin").classList.contains("on")) showTab("home");
   }
 
@@ -857,6 +922,7 @@ ${x.after.examMiss ? `Still at risk: ${x.after.examMiss} exam student(s). Ask th
     $("#wDay").onchange = (e) => { W.day = e.target.value; compute(); renderAll(); };
     const riderPayload = (t) => ({ action: "rider", clientId: P.clientId, name: P.profile.name || "Student", routeId: t.routeId, time: t.time, stop: P.profile.stop, exam: !!P.profile.exam, examTime: P.profile.examTime || "09:30" });
     $("#riderBtn").onclick = async () => {
+      if (!isStudent()) return openLogin("student", "Log in with your student email to register as a rider.");
       const t = RL.T[P.profile.tripId]; if (!t || !P.profile.stop) return alert("Choose your stop and bus first.");
       const removing = P.registered === P.profile.tripId;
       try { await post(removing ? { action: "rider", clientId: P.clientId } : riderPayload(t)); P.registered = removing ? "" : P.profile.tripId; saveP(); renderAll(); }
@@ -884,7 +950,7 @@ ${x.after.examMiss ? `Still at risk: ${x.after.examMiss} exam student(s). Ask th
       if (s) await findDetour();
     };
     $$("#tabs button").forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
-    $$(".role button").forEach((b) => (b.onclick = () => setRole(b.dataset.role)));
+    $$(".role button[data-role]").forEach((b) => (b.onclick = () => setRole(b.dataset.role))); // [data-role]: the login modal's tabs use .role too
     $$(".rb[data-out]").forEach((b) => (b.onclick = () => submitReport(b.dataset.out)));
     // v8: broke down on the way
     $("#bdBtn").onclick = () => reportBreakdown(null);
@@ -915,11 +981,20 @@ ${x.after.examMiss ? `Still at risk: ${x.after.examMiss} exam student(s). Ask th
   }
 
   // ---------- boot ----------
+  // v9 login wiring
+  $$("[data-lg]").forEach((b) => (b.onclick = () => { lgRole = b.dataset.lg; lgMode = "login"; $("#lgMsg").textContent = ""; setLgUi(); }));
+  $("#lgToggle").onclick = (e) => { e.preventDefault(); lgMode = lgMode === "signup" ? "login" : "signup"; $("#lgMsg").textContent = ""; setLgUi(); };
+  $("#loginForm").onsubmit = submitLogin;
+  $("#loginClose").onclick = closeLogin;
+  $("#loginModal").onclick = (e) => { if (e.target.id === "loginModal") closeLogin(); };
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLogin(); });
+  $("#gateLogin").onclick = () => openLogin("student");
+  renderUserChip();
   wire(); renderAll();
   addMsg("a", "Hi! Set your bus stop, then ask me which bus to take, why it's risky, or what to do if it doesn't come.");
   stopsReady = RL.loadStops().then((s) => { STOPS = s; $("#stopList").innerHTML = s.map((x) => `<option value="${esc(x.name)}">`).join(""); renderAll(); })
     .catch(() => { $("#stopInfo").textContent = "OpenStreetMap stops couldn't load — you can still type a village name."; });
   loadWeather();
-  refresh().then(() => setRole(P.role === "admin" && DB.adminLocked && !P.pin ? "student" : P.role));
+  refresh().then(() => setRole(P.role === "admin" && isAdmin() ? "admin" : "student"));
   setInterval(refresh, 20000);
 })();

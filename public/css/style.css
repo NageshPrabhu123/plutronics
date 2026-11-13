@@ -136,6 +136,24 @@ td button{padding:4px 10px!important;font-size:.8rem}
 .cmpnum{font-size:.92rem;margin:2px 0}
 .sim-tag{background:#fde68a;color:#78350f;border-radius:6px;padding:1px 6px;font-size:.72rem;font-weight:700}
 
+/* ---------- login (v9) ---------- */
+.userchip{display:flex;align-items:center;gap:6px}
+.userchip button{border:0;border-radius:99px;padding:3px 10px;font:inherit;font-size:.78rem;font-weight:600;cursor:pointer;background:#fff;color:#0f766e}
+.userchip.guest{background:rgba(250,204,21,.25)}
+.gate{border:2px dashed var(--line);border-radius:12px;padding:16px;text-align:center;margin-bottom:12px}
+.modal{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:2000;padding:16px}
+.modalbox{background:var(--card);color:var(--ink);border-radius:16px;padding:20px;width:100%;max-width:400px;position:relative;box-shadow:0 20px 50px rgba(0,0,0,.3);max-height:calc(100vh - 32px);overflow:auto}
+.modalx{position:absolute;top:10px;right:10px;background:none!important;color:var(--muted)!important;border:0;font-size:1.2rem;padding:6px 10px!important}
+.lgtabs{background:var(--bg);margin:8px 0 14px;display:flex}
+.lgtabs button{flex:1;color:var(--muted)!important;background:none!important;padding:8px 10px!important;border-radius:99px!important}
+.lgtabs button.on{background:var(--brand)!important;color:#fff!important}
+#loginForm{display:flex;flex-direction:column;gap:10px}
+#loginForm button{background:var(--brand);color:#fff;border:0;border-radius:9px;padding:10px 14px;font-weight:600;min-height:44px}
+.lgmsg{font-size:.88rem;color:var(--bad);min-height:1em}
+.lgmsg.ok{color:var(--ok)}
+.modal:not(.signup) .signup-only{display:none}
+.modal.admin .student-only{display:none}
+
 /* ---------- phone layout (v3) ---------- */
 @media (max-width:640px){
   .topbar{padding:8px 12px;gap:6px 8px}

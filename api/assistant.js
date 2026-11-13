@@ -2,7 +2,8 @@
 // The API key stays on the server (env ANTHROPIC_API_KEY); the browser only sends live app context.
 // modes: chat (student Q&A), letter (evidence letter to KSRTC), discover (find REAL bus services with web search)
 import Anthropic from "@anthropic-ai/sdk";
-import { readJson, send } from "./_store.js";
+import { readJson, send, load } from "./_store.js";
+import { userFrom } from "./_auth.js";
 import { checkCrisisPlan, mergeWithGreedy } from "./_crisisCheck.js";
 
 // Vercel functions here may run at most 60 s (vercel.json). Claude's crisis decision gets 50 s, then we fall back.
@@ -72,9 +73,14 @@ const textOf = (msg) => msg.content.filter((b) => b.type === "text").map((b) => 
 export default async function handler(req, res) {
   if (req.method === "GET") return send(res, 200, { available: !!process.env.ANTHROPIC_API_KEY, model: MODEL });
   if (req.method !== "POST") return send(res, 405, { error: "GET or POST" });
-  if (!process.env.ANTHROPIC_API_KEY) return send(res, 501, { error: "ANTHROPIC_API_KEY not configured on the server" });
+  // v9: Claude is for logged-in users only (guests get the on-device assistant); planning modes are admin-only
+  let db = null; try { db = await load(); } catch {}
+  const user = userFrom(req, db);
+  if (!user) return send(res, 401, { error: "Please log in to use Claude (guests get the on-device assistant)." });
   let body; try { body = await readJson(req); } catch { return send(res, 400, { error: "bad json" }); }
   const { mode = "chat", question = "", context = {}, from = "", to = "" } = body;
+  if (mode !== "chat" && user.role !== "admin") return send(res, 401, { error: "Transport cell (admin) login required." });
+  if (!process.env.ANTHROPIC_API_KEY) return send(res, 501, { error: "ANTHROPIC_API_KEY not configured on the server" });
   const client = new Anthropic();
   const common = { model: MODEL, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" };
 

@@ -566,5 +566,111 @@ Optional: put `ANTHROPIC_API_KEY=...` in a `.env` file (git-ignored, loaded by `
 On Vercel:
 1. Import the repo with framework preset "Other". `vercel.json` sets the output directory to `public/`, and `api/` holds the two functions.
 2. Under Storage, connect **Upstash for Redis**. This adds `KV_REST_API_URL` and `KV_REST_API_TOKEN`; without them, data is not kept.
-3. Optionally add `ANTHROPIC_API_KEY`.
-4. **`ADMIN_PIN` is left unset on purpose** so the judges can open the Admin tab. Set it after the event to lock admin.
+3. **Required for login (v9):** `SESSION_SECRET` (a long random string), `ADMIN_ID`, `ADMIN_PASSWORD` and `STUDENT_CODE` (the college access code students need to sign up). Optionally add `ANTHROPIC_API_KEY`.
+4. `ADMIN_PIN` is no longer used: the admin logs in with `ADMIN_ID` / `ADMIN_PASSWORD`. Give the judges those, or let them use guest emergency mode.
+
+---
+
+## v9: Login for students and the transport cell (sent as "v7")
+
+### Prompt 12 (exact text)
+
+```
+v7: add login with an ID and password for students and admin. Keep it simple, we have
+under an hour. Don't break any existing feature.
+
+1. Admin (transport cell): login ID and password come from env variables ADMIN_ID and
+   ADMIN_PASSWORD. Never put them in frontend code.
+2. Students: login ID = their USN, plus a password.
+   - Sign up needs USN + name + password + a college access code (env STUDENT_CODE), so
+     outsiders can't create accounts.
+   - Save passwords hashed with Node's crypto.scrypt and a random salt. Never store or
+     return plain passwords.
+   - Minimum 6-character password, and each USN can only register once.
+   - Admin can see the student list and remove a student.
+3. On login, the server returns a signed token (HMAC with env SESSION_SECRET), valid for
+   7 days, stored in localStorage. Logout clears it.
+4. Every POST to /api/data and /api/assistant needs a valid token. Student actions
+   (report, I ride this bus) need a student token, and admin actions (routes, alerts,
+   overrides, crisis) need an admin token. Otherwise return 401. Hide rider names from
+   logged-out users.
+5. Use the USN from the token for reports, so it's one report per student per bus per day.
+6. A clean login screen with "Student" and "Transport cell" tabs, plus sign-up for
+   students, a logout button, and the user's name and role in the top bar. Wrong password
+   → a clear message. Block login for 1 minute after 5 wrong tries.
+7. For local testing, put ADMIN_ID=admin, ADMIN_PASSWORD=Admin@123,
+   STUDENT_CODE=SAHYADRI2026 and SESSION_SECRET in .env. Test: logged-out users can't
+   report or use admin, students can't do admin actions, a wrong password fails, and
+   everything works after login. Then push, and add this prompt to prompt.md.
+
+8. Emergency access without login: anyone can open the app and use Route Finder, Live
+   Status, Alternatives (other buses, nearby stops, verified autos with call buttons, taxi
+   stands, Google Maps link), Alerts, the crisis banner and Ask AI (on-device answers only
+   for guests, Claude for logged-in users). Show a small "Guest: emergency mode" label.
+9. Guests can NOT report whether a bus came, register as a rider, or do any admin action.
+   On the Report tab, show "Log in with your USN to report your bus" with a login button.
+   Block this on the server too (401), not just in the UI.
+```
+
+### Prompt 13 (sent during v9, with a screenshot circling the top-bar Student/Admin toggle)
+```
+i want email id for students to login, rmove the marked portion
+```
+So students now **log in with their email address** instead of their USN, and the top-bar **Student / Admin toggle was removed**. The Admin view opens automatically when the transport cell logs in.
+
+### How it works
+- **`api/_auth.js`** (Node `crypto` only, no new packages):
+  - student passwords use `scrypt` with a random 16-byte salt, and are compared in constant time;
+  - tokens are `base64url(payload).HMAC-SHA256(SESSION_SECRET)` with `{sub, role, name, exp: 7 days}`;
+  - the admin ID and password are compared in constant time with `ADMIN_ID` / `ADMIN_PASSWORD`, which live only on the server;
+  - a student whom the admin removes stops being accepted immediately, even with an unexpired token.
+- **`POST /api/auth`:**
+  - `signup` requires a valid email, a name, a password of at least 6 characters, the correct `STUDENT_CODE`, and an email not already registered (409);
+  - `login` works for students (email) and the admin (ID);
+  - **5 wrong tries → blocked for 1 minute** (wrong sign-up codes are counted too). The counter is in the shared database, so it holds across Vercel instances.
+- **`/api/data`:**
+  - every POST needs `Authorization: Bearer <token>`, otherwise **401**;
+  - `report`, `rider` and `breakdown` need a **student**, and the identity is **the email from the token**, never the request, so it's **one report per student per bus per day**;
+  - every admin action (routes, alerts, overrides, config, operators, crisis, `deleteStudent`) needs the **transport cell**.
+- **What guests see on GET:** everything needed in an emergency, but rider and reporter names show as "Student". The admin also gets the student list (email, name, date; no password data).
+- **`/api/assistant`:** Claude chat needs a login; planning modes (route discovery, letter, explain, crisis decisions) need the admin. Guests get the on-device assistant.
+- **UI:**
+  - **Top bar:** "🆘 Guest: emergency mode · Log in", or "👤 Asha Rao · asha.rao@… · Student / 🚌 Transport cell (admin) · Log out".
+  - **Login modal:** **Student / Transport cell** tabs and student sign-up.
+  - **Report tab:** guests see **"🔒 Log in with your student email to report your bus"** with a login button; "I ride this bus" asks guests to log in.
+  - **Admin:** a "🎓 Registered students" table with **Remove**.
+  - **Guest mode:** Route Finder, Live Status, Alternatives (call buttons, taxi stands, Google Maps), Alerts, the crisis banner and on-device Ask AI keep working without login.
+
+### Tests (all passing, no console errors)
+**Server access rules, 34/34** (against the running server with the `.env` login values):
+- **Guests:** every write (report, I ride this bus, breakdown, addRoute, alert, crisis) and Claude chat → 401.
+- **Sign-up and login:**
+  - a wrong access code → 401 "(4 tries left)"; a password under 6 characters → 400; an invalid email → 400;
+  - a valid sign-up works, with `"  Asha.Rao@Sahyadri.EDU.in "` normalised to `asha.rao@sahyadri.edu.in`;
+  - a second sign-up with the same email → 409;
+  - a wrong password → 401 with tries left; the right password works.
+- **Roles:** a student calling addRoute, crisis, deleteStudent or Claude crisis planning → 401; the admin filing a student report → 401.
+- **Reports and riders:** the name comes from the account (a spoofed `clientId` and name are ignored); a second report by the same student replaces the first; "I ride this bus" works; guests see names hidden.
+- **Admin and storage:** the admin's student list has no password data; the database file holds a 32-hex salt and a 128-hex hash, and **the plain password appears nowhere**.
+- **Tokens:** a token edited to `role: admin` (bad signature) → 401; after the admin removes a student, that student's token → 401.
+- **Lockout:** the 5th wrong try → "blocked for 1 minute"; the correct password during the lock → 429 "Try again in 60 s".
+
+**Vercel/Upstash, 14/14:** login and sign-up through Upstash storage, a report without login → 401, and outage protection still holds.
+
+**In the browser:**
+- **Guest:** guest label shown; Report gate shown; Ask AI says "On-device assistant · log in to ask Claude"; the Admin view is never shown.
+- **Logins:** a wrong admin password gives a clear message. A student signs up with email, is locked to their account name, reports a bus and registers as a rider. The admin lands on the Admin tab with the student list and can still browse every tab.
+- **After logout:** the gates come back.
+- **Existing features:** "Simulate exam day crisis" still works behind the admin login (missing exam 30 → 0, without transport 94 → 0, 7 stranded on the road, all picked up).
+
+### Bugs found and fixed
+| # | Bug | Fix |
+|---|---|---|
+| 45 | The login modal's role tabs reused the top bar's `.role` class, so the top-bar handler (`.role button` → `setRole`) **overwrote the "Transport cell" tab click**: it silently stayed on "Student". | Handlers are scoped to `.role button[data-role]` (later the top-bar toggle was removed entirely, Prompt 13). |
+| 46 | My test hard-coded `STUDENT_CODE=SAHYADRI2026`, but `.env` had since been changed to a different code, so every sign-up failed and then locked for a minute (the lockout working as designed). | The test reads the login values from `.env`, and the user's `.env` was left as it is. |
+| 47 | The admin chip read "Transport cell · admin · Transport cell". | "🚌 Transport cell (admin)". |
+| 48 | Old `ADMIN_PIN` / `checkPin` code would conflict with token login. | Removed. Admin actions require the admin token. |
+
+### Notes
+- **Local test values** are in the git-ignored `.env`: `ADMIN_ID=admin`, `ADMIN_PASSWORD=Admin@123`, `STUDENT_CODE` (currently set in `.env`), and a random `SESSION_SECRET`. **Use different, strong values on Vercel.**
+- The token is kept in `localStorage`, as requested. It is HMAC-signed and expires after 7 days; logout removes it.

@@ -94,12 +94,34 @@
     } catch { return { ok: false, prob: null, mm: 0, temp: null, rain: 0 }; }
   };
 
+  // v9: login session — the signed token from /api/auth (7 days) kept in localStorage; logout clears it
+  const SKEY = "routeless.session";
+  RL.session = {
+    get() {
+      try {
+        const s = JSON.parse(localStorage.getItem(SKEY)); if (!s || !s.token) return null;
+        const b = s.token.split(".")[0].replace(/-/g, "+").replace(/_/g, "/");
+        const p = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(b + "===".slice((b.length + 3) % 4)), (c) => c.charCodeAt(0))));
+        if (!p.exp || p.exp < Date.now()) { localStorage.removeItem(SKEY); return null; }
+        return { token: s.token, id: p.sub, name: p.name, role: p.role, exp: p.exp };
+      } catch { return null; }
+    },
+    set(token) { try { localStorage.setItem(SKEY, JSON.stringify({ token })); } catch {} },
+    clear() { try { localStorage.removeItem(SKEY); } catch {} },
+  };
+  RL.authHeaders = () => { const s = RL.session.get(); return s ? { Authorization: "Bearer " + s.token } : {}; };
+  const httpError = (r, j) => Object.assign(new Error(j.error || "api " + r.status), { status: r.status });
+
   // Shared database
   RL.api = {
-    async get() { const r = await fetch("api/data", { cache: "no-store" }); if (!r.ok) throw new Error("api " + r.status); return r.json(); },
+    async get() { const r = await fetch("api/data", { cache: "no-store", headers: RL.authHeaders() }); if (!r.ok) throw new Error("api " + r.status); return r.json(); },
     async post(body) {
-      const r = await fetch("api/data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || "api " + r.status); return j;
+      const r = await fetch("api/data", { method: "POST", headers: { "Content-Type": "application/json", ...RL.authHeaders() }, body: JSON.stringify(body) });
+      const j = await r.json().catch(() => ({})); if (!r.ok) throw httpError(r, j); return j;
+    },
+    async auth(body) {
+      const r = await fetch("api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const j = await r.json().catch(() => ({})); if (!r.ok) throw httpError(r, j); return j;
     },
   };
 })();

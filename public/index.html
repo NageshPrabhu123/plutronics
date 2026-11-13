@@ -17,10 +17,7 @@
     <div class="topright">
       <span id="liveChip" class="chip">● connecting…</span>
       <span id="weatherChip" class="chip">☁️ loading weather…</span>
-      <div class="role" role="group" aria-label="Role">
-        <button data-role="student" class="on">Student</button>
-        <button data-role="admin">Admin</button>
-      </div>
+      <span id="userChip" class="chip userchip"></span>
     </div>
   </header>
 
@@ -94,6 +91,12 @@
       <div class="card narrow">
         <h2>Did your bus come?</h2>
         <p class="muted">One tap. Every report is saved to the shared database, retrains the AI and becomes evidence for officials.</p>
+        <div id="reportGate" class="gate hidden">
+          <p><b>🔒 Log in with your student email to report your bus.</b></p>
+          <p class="small muted">Reports are tied to your student account (one per bus per day), so nobody can flood the system. Guests can still use Route Finder, Live Status, Alternatives, Alerts and Ask AI.</p>
+          <button id="gateLogin" type="button">Log in / sign up</button>
+        </div>
+        <div id="reportBody">
         <label class="full">Bus <select id="rTrip"></select></label>
         <div class="reportbtns">
           <button data-out="ontime" class="rb ok">✅<span>Came on time</span></button>
@@ -107,6 +110,7 @@
           <div class="row gap"><select id="bdSeg" style="flex:1"></select><button id="bdSend" type="button">Send breakdown report</button></div>
         </div>
         <div id="reportMsg"></div>
+        </div>
         <h3>Today's reports</h3><div id="todayReports"></div>
       </div>
     </section>
@@ -259,8 +263,34 @@
         <button id="oSave">Add verified operator</button>
         <div id="opList"></div>
       </div>
+      <div class="card"><h3>🎓 Registered students</h3>
+        <p class="muted small">Students sign up with their email, a password and the college access code. Passwords are stored only as salted scrypt hashes.</p>
+        <div class="tablewrap"><table id="studentTable"></table></div>
+      </div>
     </section>
   </main>
+
+  <!-- v9: login / sign-up -->
+  <div id="loginModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+    <div class="modalbox">
+      <button id="loginClose" class="modalx" type="button" aria-label="Close">✕</button>
+      <h2 id="loginTitle">Log in to RouteLess</h2>
+      <div class="role lgtabs" role="tablist">
+        <button type="button" data-lg="student" class="on">🎓 Student</button>
+        <button type="button" data-lg="admin">🚌 Transport cell</button>
+      </div>
+      <form id="loginForm" autocomplete="on">
+        <label><span id="lgIdLabel">Email</span><input id="lgId" type="email" autocomplete="email" required placeholder="you@college.edu" /></label>
+        <label class="signup-only">Full name<input id="lgName" autocomplete="name" placeholder="Your name" /></label>
+        <label>Password<input id="lgPass" type="password" autocomplete="current-password" required /></label>
+        <label class="signup-only">College access code<input id="lgCode" autocomplete="off" placeholder="Ask your transport cell" /></label>
+        <div id="lgMsg" class="lgmsg" role="alert"></div>
+        <button id="lgSubmit" type="submit">Log in</button>
+      </form>
+      <p class="small student-only"><a href="#" id="lgToggle">New student? Sign up with your email</a></p>
+      <p class="small muted">No login needed in an emergency: Route Finder, Live Status, Alternatives, Alerts, the crisis banner and Ask AI work as a guest.</p>
+    </div>
+  </div>
 
   <footer>RouteLess · Aerophilia 2K26 Prompt Battle · stops © OpenStreetMap contributors · routing OSRM · weather Open-Meteo · all routes and reports are entered by real users</footer>
 
