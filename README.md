@@ -7,8 +7,8 @@ Works on a phone. Admin is open (no PIN).
 
 1. **Load starter routes.** Tap **Admin → 🚀 Load starter routes**. This adds 4 real routes (Puttur, Vitla, Moodbidri, B.C. Road → Sahyadri College) on real roads; the timings are samples.
 2. **Pick a stop.** Tap **Student → My bus stop**, type `B C Road`, choose a Puttur bus, tick **📝 I have an exam today** (09:00) and tap **I ride this bus**. The forecast card shows the % chance the bus is late.
-3. **Report a bus.** Tap **✋ Report → ❌ Didn't come**. The AI retrains, and the risk, status and reliability grade change immediately.
-4. **Simulate exam day crisis.** Tap **Admin → ⚡ Simulate exam day crisis**. In about 20 s: 2 KSRTC buses break down, demand rises 40%, the B C Road ↔ Farangipete road floods (OSRM finds a detour), and 120 simulated students are added (40% with exams).
+3. **Report a bus.** Tap **✋ Report → ❌ Didn't come**. The AI retrains, and the risk, status and reliability grade change immediately. (There is also **🛠 Broke down on the way**: students already on board get a pickup *at the breakdown spot*.)
+4. **Simulate exam day crisis.** Tap **Admin → ⚡ Simulate exam day crisis**. In about 20–40 s: 2 KSRTC buses break down, **one more bus breaks down on the way** (its passengers are stranded at the spot), demand rises 40%, the B C Road ↔ Farangipete road floods (OSRM finds a detour), and 120 simulated students are added (40% with exams).
 5. **Show before → after** (right under the buttons):
    - **students who would miss their exam 27 → 0**;
    - **students without transport 81 → 0**;
@@ -55,6 +55,8 @@ The optimiser then re-plans every seat:
 - exam students are seated first, earliest exam first;
 - broken buses are replaced by depot or under-used buses;
 - other students take the next bus, a nearby-stop bus or a shared-auto pod.
+
+**A bus breaking down on the way** is handled too. Students already on board are stranded at the spot, and they get a rescue bus (timed by road distance), a bus that still passes the spot, or a shared auto from the nearest real auto stand. Exam students go first. Students report it with **🛠 Broke down on the way**; 2 phones confirm it automatically, or the transport cell confirms it.
 
 It shows **students missing their exam X → Y** and **students without transport X → Y**. With an API key, **Claude also decides the plan**; the server checks Claude's plan and the better plan wins. Every student sees a red banner with their personal plan and "Decided by Claude / on-device optimiser". "Reset crisis" restores everything. Details are in [prompt.md](prompt.md#-surprise-hurdle-the-exam-day-crisis-v5--v6).
 

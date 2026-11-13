@@ -4,6 +4,10 @@
  *  2. Demand surge    : +N% anonymous riders on every trip
  *  3. Road blockage   : routes using the blocked road are flagged; OSRM detour (alternatives / via-point) or unusable
  *  4. Exam priority   : students with an exam are seated first, earliest exam first
+ *  5. Mid-route breakdown (v8): a bus breaks down BETWEEN stops. Students already on board are stranded at the
+ *     breakdown spot (not at their home stop); students at later stops still wait at their stops. A rescue bus
+ *     (spare or under-used bus) is timed by road distance to the spot, then continues the route; other buses that
+ *     pass the spot later can pick people up; shared autos come from the nearest real auto stand.
  * Optimiser: replace broken buses (depot spare → under-used donor trips), then priority seat assignment
  * (own bus → other bus at your stop → bus at a nearby stop → shared-auto pod of 4), before/after metrics. */
 (function () {
@@ -21,6 +25,41 @@
   const label = (t) => `${RL.R[t.routeId].code} ${t.time}`;
   // stable pseudo-random order (so "before" = first-come-first-served, same on every device)
   const hash = (s) => { let h = 2166136261; for (const c of s) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; };
+
+  // ---------- v8: mid-route breakdown helpers ----------
+  const RESCUE_DISPATCH = 10, RESCUE_KMH = 30;   // rescue bus leaves the college yard 10 min after the call
+  const driveMin = (a, b, kmh) => ((RL.haversine(a, b) * 1.3) / kmh) * 60;
+  // spot halfway between stop k and k+1 of a trip, and the scheduled time the bus would be there
+  C.midwayAt = (tripId, k) => {
+    const t = RL.T[tripId], r = RL.R[t.routeId]; k = Math.max(0, Math.min(k, r.stops.length - 2));
+    const a = r.stops[k], b = r.stops[k + 1];
+    return { tripId, after: k, lat: +((a.lat + b.lat) / 2).toFixed(5), lng: +((a.lng + b.lng) / 2).toFixed(5), place: `between ${a.name} and ${b.name}`,
+      at: Math.round(RL.toMin(t.time) + ((r.offsets[k] || 0) + (r.offsets[k + 1] || 0)) / 2) };
+  };
+  // from a GPS point: which segment of the route is the bus on?
+  C.locateOnRoute = (tripId, p) => {
+    const r = RL.R[RL.T[tripId].routeId]; let best = { k: 0, d: 1e9 };
+    for (let k = 0; k < r.stops.length - 1; k++) { const a = r.stops[k], b = r.stops[k + 1]; const d = RL.haversine(p, a) + RL.haversine(p, b) - RL.haversine(a, b); if (d < best.d) best = { k, d }; }
+    const near = r.stops.reduce((m, s) => (RL.haversine(s, p) < RL.haversine(m, p) ? s : m), r.stops[0]);
+    return { after: best.k, place: `near ${near.name}`, offRouteKm: Math.min(...r.stops.map((s) => RL.haversine(s, p))) };
+  };
+  // when a rescue bus can reach the spot and how late that makes the rest of the trip
+  const rescueDelay = (t, m) => {
+    const scheduledAtSpot = boardAt(t, m);
+    const rescueAt = m.at + RESCUE_DISPATCH + driveMin(RL.COLLEGE, m, RESCUE_KMH);
+    return Math.max(REPLACE_DELAY, Math.round(rescueAt - scheduledAtSpot));
+  };
+  // shared auto for one passenger: from their stop, or — if stranded — from the nearest auto stand to the breakdown spot
+  const autoFor = (p) => {
+    const dl = p.exam ? RL.toMin(p.examTime) - EXAM_BUFFER : Infinity;
+    const travel = ((RL.haversine(p.stop, RL.COLLEGE) * 1.3) / AUTO_KMH) * 60;
+    if (p.onboard) {
+      const reach = p.notBefore + 5 + ((p.standKm ?? 5) / AUTO_KMH) * 60; // call + drive from the stand
+      return { dep: Math.round(reach), arr: Math.round(reach + travel) };
+    }
+    const dep = Math.round(p.exam ? Math.max(6 * 60, dl - travel - AUTO_GATHER) : boardAt(RL.T[p.tripId], p.stop));
+    return { dep, arr: Math.round(dep + AUTO_GATHER + travel) };
+  };
 
   // ---------- road segments & blockage ----------
   C.segments = () => {
@@ -71,7 +110,9 @@
 
   // ---------- the optimiser ----------
   C.run = ({ riders, crisis }) => {
-    const broken = new Set(crisis.broken || []);
+    const midway = (crisis.midway || []).filter((m) => RL.T[m.tripId]);
+    const mw = Object.fromEntries(midway.map((m) => [m.tripId, m]));
+    const broken = new Set([...(crisis.broken || []), ...midway.map((m) => m.tripId)]);
     const blocked = new Set(C.blockedRoutes(crisis));
     const detourMin = (rid) => (blocked.has(rid) && crisis.detours?.[rid]?.found ? crisis.detours[rid].extraMin : 0);
     const routeUsable = (rid) => !blocked.has(rid) || !!crisis.detours?.[rid]?.found;
@@ -86,12 +127,21 @@
     });
     const deadline = (p) => (p.exam ? RL.toMin(p.examTime) - EXAM_BUFFER : Infinity);
 
+    // v8: students who boarded before the breakdown point are now stranded AT the spot, from the breakdown time on
+    pax.forEach((p) => {
+      const m = mw[p.tripId]; if (!m) return;
+      if (nearestIdx(RL.R[RL.T[p.tripId].routeId], p.stop).i > m.after) return; // still waiting at a later stop
+      p.home = p.stop; p.stop = { name: m.place, lat: m.lat, lng: m.lng }; p.notBefore = m.at; p.onboard = true; p.standName = m.standName; p.standKm = m.standKm;
+    });
+
     // trip state
     const T = {};
     RL.TRIPS.forEach((t) => {
       const usable = !broken.has(t.id) && routeUsable(t.routeId);
-      T[t.id] = { trip: t, cap: usable ? t.capacity : 0, broken: broken.has(t.id), blocked: blocked.has(t.routeId), detour: detourMin(t.routeId), delay: detourMin(t.routeId), usable, replacedBy: null, donatedTo: null, before: 0, after: 0 };
+      T[t.id] = { trip: t, cap: usable ? t.capacity : 0, broken: broken.has(t.id), blocked: blocked.has(t.routeId), detour: detourMin(t.routeId), delay: detourMin(t.routeId), usable, replacedBy: null, donatedTo: null, before: 0, after: 0, midway: mw[t.id] || null };
     });
+    // how late a replacement makes each broken trip: a rescue bus must first drive to the breakdown spot
+    const repDelay = Object.fromEntries(RL.TRIPS.map((t) => [t.id, mw[t.id] ? rescueDelay(t, mw[t.id]) : REPLACE_DELAY]));
     const arr = (tid) => arriveAt(T[tid].trip) + T[tid].delay;
 
     // ---- BEFORE: no plan. Everyone waits for their own bus, first come first served, no priority, no autos.
@@ -108,7 +158,8 @@
     const load = (tid) => (byTrip[tid] || []).length * (1 + surge);
     const examUrgency = (tid) => { const ex = (byTrip[tid] || []).filter((p) => p.exam).map((p) => RL.toMin(p.examTime)); return ex.length ? [ex.length, -Math.min(...ex)] : [0, 0]; };
     const needs = Object.values(T).filter((s) => s.broken && routeUsable(s.trip.routeId) && load(s.trip.id) > 0)
-      .sort((x, y) => { const a = examUrgency(x.trip.id), b = examUrgency(y.trip.id); return b[0] - a[0] || b[1] - a[1] || load(y.trip.id) - load(x.trip.id); });
+      // students stranded on the road come first, then exam urgency, then load
+      .sort((x, y) => { const a = examUrgency(x.trip.id), b = examUrgency(y.trip.id); return (!!y.midway - !!x.midway) || b[0] - a[0] || b[1] - a[1] || load(y.trip.id) - load(x.trip.id); });
     let spare = crisis.spare || 0;
     const donors = Object.values(T).filter((s) => s.usable && load(s.trip.id) < s.trip.capacity * 0.4 && !(byTrip[s.trip.id] || []).some((p) => p.exam))
       .filter((s) => { // its riders must fit on another trip of the same route
@@ -121,7 +172,10 @@
       let from = null, donor = "depot";
       if (spare > 0) { spare--; from = "depot reserve bus"; }
       else { const d = donors.find((x) => x.cap > 0 && x.trip.routeId !== s.trip.routeId) || donors.find((x) => x.cap > 0); if (d) { d.cap = 0; d.usable = false; d.donatedTo = s.trip.id; donor = d.trip.id; from = `bus moved from ${label(d.trip)} (only ${Math.round(load(d.trip.id))} riders, absorbed by its other trips)`; } }
-      if (from) { s.cap = s.trip.capacity; s.usable = true; s.delay += REPLACE_DELAY; s.replacedBy = from; replacements.push({ trip: s.trip.id, label: label(s.trip), from, donor }); }
+      if (from) {
+        if (s.midway) from = `rescue: ${from}`;
+        s.cap = s.trip.capacity; s.usable = true; s.delay += repDelay[s.trip.id]; s.replacedBy = from; replacements.push({ trip: s.trip.id, label: label(s.trip), from, donor, delay: repDelay[s.trip.id] });
+      }
     });
 
     // ---- AFTER, step 2: priority seat assignment
@@ -134,18 +188,18 @@
       RL.TRIPS.forEach((t) => {
         const st = T[t.id]; if (!st.usable || seats[t.id] <= 0) return;
         const n = nearestIdx(RL.R[t.routeId], p.stop); if (n.i >= RL.R[t.routeId].stops.length - 1) return;
-        if (n.km <= NEAR_KM) opts.push({ mode: t.id === p.tripId ? "own" : "next", tid: t.id, arrival: arr(t.id), board: boardAt(t, p.stop) + st.delay - st.detour, km: n.km });
-        else if (n.km <= NEARBY_KM) opts.push({ mode: "nearby", tid: t.id, arrival: arr(t.id), board: boardAt(t, p.stop) + st.delay - st.detour, km: n.km, stopName: RL.R[t.routeId].stops[n.i].name });
+        const board = boardAt(t, p.stop) + st.delay - st.detour;
+        if (p.notBefore != null && board < p.notBefore) return; // that bus already passed the breakdown spot
+        if (n.km <= NEAR_KM) opts.push({ mode: t.id === p.tripId ? "own" : "next", tid: t.id, arrival: arr(t.id), board, km: n.km, stopName: RL.R[t.routeId].stops[n.i].name });
+        else if (n.km <= NEARBY_KM) opts.push({ mode: "nearby", tid: t.id, arrival: arr(t.id), board, km: n.km, stopName: RL.R[t.routeId].stops[n.i].name });
       });
       const dl = deadline(p);
       const rank = (o) => (o.mode === "own" ? 0 : o.mode === "next" ? 1 : 2);
       const inTime = opts.filter((o) => o.arrival <= dl).sort((a, b) => rank(a) - rank(b) || a.arrival - b.arrival);
       let pick = inTime[0] || null;
-      // shared-auto pod: straight to college from the student's stop
-      // exam students' autos leave as early as needed to make the exam (never before 06:00); others at their bus time
-      const autoTravel = AUTO_GATHER + ((RL.haversine(p.stop, RL.COLLEGE) * 1.3) / AUTO_KMH) * 60;
-      const autoDep = Math.round(p.exam ? Math.max(6 * 60, dl - autoTravel) : boardAt(RL.T[p.tripId], p.stop));
-      const autoArr = Math.round(autoDep + autoTravel);
+      // shared-auto pod straight to college: exam students' autos leave as early as needed (never before 06:00);
+      // stranded students' autos come from the nearest auto stand to the breakdown spot
+      const { dep: autoDep, arr: autoArr } = autoFor(p);
       const podFor = () => {
         let pod = pods.find((x) => x.members.length < POD && RL.haversine(x.stop, p.stop) < 1.2);
         if (!pod && autosLeft > 0) { autosLeft--; pod = { id: `A${pods.length + 1}`, stop: p.stop, members: [], dep: autoDep }; pods.push(pod); }
@@ -171,25 +225,22 @@
     });
 
     return { before, after, replacements, pods, results, trips: T, blockedRoutes: [...blocked], autosUsed: pods.length, spareLeft: spare,
-      examStudents: order.filter((p) => p.exam), surgeAdded: pax.filter((p) => p.surge).length, order, donorIds, decidedBy: "greedy" };
+      examStudents: order.filter((p) => p.exam), surgeAdded: pax.filter((p) => p.surge).length, order, donorIds, decidedBy: "greedy",
+      repDelay, midway, stranded: order.filter((p) => p.onboard) };
   };
 
   // ---------- v6: what Claude sees (short ids T#/S# keep it compact; maps translate back) ----------
-  const autoFor = (p) => {
-    const dl = p.exam ? RL.toMin(p.examTime) - EXAM_BUFFER : Infinity;
-    const travel = AUTO_GATHER + ((RL.haversine(p.stop, RL.COLLEGE) * 1.3) / AUTO_KMH) * 60;
-    const dep = Math.round(p.exam ? Math.max(6 * 60, dl - travel) : boardAt(RL.T[p.tripId], p.stop));
-    return { dep, arr: Math.round(dep + travel) };
-  };
   // every bus a passenger could physically use (ignores seats — Claude decides seats); broken trips only "ifReplaced"
-  const optionsFor = (p, crisis, blocked) => {
+  const optionsFor = (p, greedy, blocked, crisis) => {
     const out = [];
     RL.TRIPS.forEach((t) => {
       const rid = t.routeId, det = blocked.has(rid) ? crisis.detours?.[rid] : null;
       if (blocked.has(rid) && !(det && det.found)) return;
       const n = nearestIdx(RL.R[rid], p.stop); if (n.i >= RL.R[rid].stops.length - 1 || n.km > NEARBY_KM) return;
-      const isBroken = (crisis.broken || []).includes(t.id), extra = det && det.found ? det.extraMin : 0, rep = isBroken ? REPLACE_DELAY : 0;
-      out.push({ tid: t.id, board: boardAt(t, p.stop) + rep, arrive: arriveAt(t) + extra + rep, km: n.km, stopName: RL.R[rid].stops[n.i].name, ifReplaced: isBroken });
+      const isBroken = !!greedy.trips[t.id]?.broken, extra = det && det.found ? det.extraMin : 0, rep = isBroken ? greedy.repDelay[t.id] : 0;
+      const board = boardAt(t, p.stop) + rep;
+      if (p.notBefore != null && board < p.notBefore) return; // already passed the breakdown spot
+      out.push({ tid: t.id, board, arrive: arriveAt(t) + extra + rep, km: n.km, stopName: RL.R[rid].stops[n.i].name, ifReplaced: isBroken });
     });
     return out;
   };
@@ -206,14 +257,16 @@
       blockedRoad: crisis.blocked ? `${crisis.blocked.a.name} ↔ ${crisis.blocked.b.name}` : null,
       trips: RL.TRIPS.map((t) => {
         const rid = t.routeId, det = blocked.has(rid) ? crisis.detours?.[rid] : null, list = own[t.id] || [];
-        return { id: T2S[t.id], bus: label(t), seats: t.capacity, broken: (crisis.broken || []).includes(t.id), blockedNoDetour: blocked.has(rid) && !(det && det.found), detourMin: det && det.found ? det.extraMin : 0,
-          arrivesCollege: RL.fmt(arriveAt(t) + (det && det.found ? det.extraMin : 0)), riders: list.length, examRiders: list.filter((p) => p.exam).length };
+        const m = greedy.trips[t.id]?.midway;
+        return { id: T2S[t.id], bus: label(t), seats: t.capacity, broken: !!greedy.trips[t.id]?.broken, blockedNoDetour: blocked.has(rid) && !(det && det.found), detourMin: det && det.found ? det.extraMin : 0,
+          arrivesCollege: RL.fmt(arriveAt(t) + (det && det.found ? det.extraMin : 0)), riders: list.length, examRiders: list.filter((p) => p.exam).length,
+          ...(m ? { brokeDownOnTheWay: `${m.place} at ${RL.fmt(m.at)}`, strandedOnBoard: list.filter((p) => p.onboard).length, rescueDelayMin: greedy.repDelay[t.id] } : {}) };
       }),
       donorCandidates: (greedy.donorIds || []).map((id) => T2S[id]),
       students: greedy.order.map((p) => {
         const a = autoFor(p);
-        return { id: P2S[p.id], exam: p.exam ? p.examTime : "", stop: p.stop.name, own: T2S[p.tripId],
-          opts: optionsFor(p, crisis, blocked).map((o) => [T2S[o.tid], RL.fmt(o.board), RL.fmt(o.arrive), o.ifReplaced ? "ifReplaced" : o.km > NEAR_KM ? `nearby ${o.km.toFixed(1)} km` : ""]),
+        return { id: P2S[p.id], exam: p.exam ? p.examTime : "", stop: p.stop.name, own: T2S[p.tripId], ...(p.onboard ? { strandedAtBreakdownSince: RL.fmt(p.notBefore) } : {}),
+          opts: optionsFor(p, greedy, blocked, crisis).map((o) => [T2S[o.tid], RL.fmt(o.board), RL.fmt(o.arrive), o.ifReplaced ? "ifReplaced" : o.km > NEAR_KM ? `nearby ${o.km.toFixed(1)} km` : ""]),
           auto: [RL.fmt(a.dep), RL.fmt(a.arr)] };
       }),
       greedy: {
@@ -243,8 +296,9 @@
       const to = T[m.to]; if (!to) return;
       const fromLabel = m.from === "depot" ? "depot reserve bus" : T[m.from] ? `bus moved from ${label(T[m.from].trip)}` : "reserve bus";
       if (m.from !== "depot" && T[m.from]) { T[m.from].cap = 0; T[m.from].usable = false; T[m.from].donatedTo = m.to; }
-      to.cap = to.trip.capacity; to.usable = true; to.delay += REPLACE_DELAY; to.replacedBy = fromLabel;
-      replacements.push({ trip: m.to, label: label(to.trip), from: fromLabel + (m.reason ? ` (${m.reason})` : ""), donor: m.from });
+      const d = greedy.repDelay?.[m.to] ?? REPLACE_DELAY;
+      to.cap = to.trip.capacity; to.usable = true; to.delay += d; to.replacedBy = (to.midway ? "rescue: " : "") + fromLabel;
+      replacements.push({ trip: m.to, label: label(to.trip), from: to.replacedBy + (m.reason ? ` (${m.reason})` : ""), donor: m.from, delay: d });
     });
     const results = {}, pods = {}; const after = { examMiss: 0, stranded: 0, exam: greedy.before.exam, total: greedy.before.total, moved: 0, nearby: 0, auto: 0, late: 0 };
     // students who registered after Claude decided keep their on-device seat if that bus still has room
@@ -275,8 +329,17 @@
   C.personal = (plan, rid) => {
     const r = plan && plan.results[rid]; if (!r) return null;
     const p = r.p, orig = RL.T[p.tripId], st = plan.trips[p.tripId];
-    const why = st.broken && !st.replacedBy ? `Your bus ${label(orig)} is broken down` : st.broken ? `Your bus ${label(orig)} broke down — a ${st.replacedBy.split(" (")[0]} replaces it` : st.blocked ? `Your route is affected by the road blockage${st.detour ? ` (detour +${st.detour} min)` : ""}` : `Your bus ${label(orig)} runs`;
     const exam = p.exam ? ` your ${p.examTime} exam` : "";
+    const endTxt = (r) => `you'll reach college by ${RL.fmt(r.arrival)}${exam ? (r.onTime ? ", before" + exam : " — after" + exam + ", tell your exam cell") : ""}`;
+    // v8: stranded on the road — the plan picks them up AT the breakdown spot
+    if (p.onboard) {
+      const why = `Your bus ${label(orig)} broke down ${st.midway.place} at ${RL.fmt(st.midway.at)}`;
+      if (r.mode === "none") return { level: "high", text: `${why}. Stay with the group at the bus; no transport could be found yet${exam ? " before" + exam : ""} — the transport cell has your location and you are on the priority list.` };
+      if (r.mode === "auto") return { level: "high", text: `${why} → stay at the bus: a shared auto (pod ${r.pod}) ${p.standName ? `from ${p.standName}` : "arranged by the transport cell"} picks your group up at about ${RL.fmt(r.board)}; ${endTxt(r)}.` };
+      if (r.mode === "own") return { level: "high", text: `${why} → stay at the bus: a ${st.replacedBy.replace("rescue: ", "").split(" (")[0]} reaches you at about ${RL.fmt(r.board)}; ${endTxt(r)}.` };
+      return { level: "high", text: `${why} → walk to ${r.stopName} (${r.km.toFixed(1)} km) and board ${label(RL.T[r.tid])} at ${RL.fmt(r.board)}; ${endTxt(r)}.` };
+    }
+    const why = st.midway && !st.replacedBy ? `Your bus ${label(orig)} broke down ${st.midway.place} before reaching your stop` : st.midway ? `Your bus ${label(orig)} broke down ${st.midway.place}; a rescue bus continues the route` : st.broken && !st.replacedBy ? `Your bus ${label(orig)} is broken down` : st.broken ? `Your bus ${label(orig)} broke down — a ${st.replacedBy.split(" (")[0]} replaces it` : st.blocked ? `Your route is affected by the road blockage${st.detour ? ` (detour +${st.detour} min)` : ""}` : `Your bus ${label(orig)} runs`;
     if (r.mode === "none") return { level: "high", text: `${why}. No seat could be found${exam ? " before" + exam : ""} — contact the transport cell; you are on the priority list.` };
     if (r.mode === "auto") return { level: "high", text: `${why} → join shared-auto pod ${r.pod} at ${p.stop.name} at ${RL.fmt(r.board)}; you'll reach by ${RL.fmt(r.arrival)}${exam ? (r.onTime ? ", before" + exam : " — after" + exam + ", tell your exam cell") : ""}.` };
     const t = RL.T[r.tid];

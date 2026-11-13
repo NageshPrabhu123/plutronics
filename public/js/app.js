@@ -40,6 +40,10 @@
   let PLAN = null, GREEDY = null, CLAUDE = null; // Exam Day Crisis: live plan (null when off), on-device plan, Claude's plan
   const decidedBy = () => (PLAN && PLAN.decidedBy === "claude" ? "Decided by Claude" : "Decided by on-device optimiser");
   const crisisOn = () => !!(DB.crisis && DB.crisis.active);
+  // v8: a bus that broke down on the way triggers re-planning even without Exam Day Crisis mode
+  const midwayList = () => (DB.crisis && DB.crisis.midway) || [];
+  const planOn = () => crisisOn() || midwayList().length > 0;
+  const planInput = () => ({ riders: DB.riders, crisis: crisisOn() ? DB.crisis : { ...DB.crisis, broken: [], surgePct: 0, blocked: null, detours: {}, spare: DB.config.spare || 0 } });
   const gmaps = (p) => `https://www.google.com/maps/dir/?api=1&origin=${p.lat},${p.lng}&destination=${RL.COLLEGE.lat},${RL.COLLEGE.lng}&travelmode=transit`;
   const todayReports = () => DB.reports.filter((r) => r.date === DB.today);
   // copy column headers into each cell's data-label, so tables can stack as cards on phones
@@ -56,6 +60,7 @@
     const cs = PLAN && isToday() ? PLAN.trips[k] : null;
     if (cs) {
       const sim = DB.crisis.simulated ? " (simulated)" : "";
+      if (cs.midway) return { s: cs.replacedBy ? "Replacement bus" : "Broken down", src: `broke down on the way ${cs.midway.place} at ${RL.fmt(cs.midway.at)}${cs.replacedBy ? ` — rescue bus, ${PLAN.repDelay[k]} min late` : ""}${sim}`, live: true };
       if (cs.broken && cs.replacedBy) return { s: "Replacement bus", src: `broke down — ${cs.replacedBy.split(" (")[0]}, +15 min${sim}`, live: true };
       if (cs.broken) return { s: "Broken down", src: `Exam Day Crisis${sim}`, live: true };
       if (cs.donatedTo) return { s: "Bus moved", src: `bus sent to ${tripLabel(RL.T[cs.donatedTo])}; riders re-seated${sim}`, live: true };
@@ -75,9 +80,9 @@
   function compute() {
     ROWS = {};
     PLAN = null; GREEDY = null; CLAUDE = null;
-    if (crisisOn() && RL.TRIPS.length) {
+    if (planOn() && RL.TRIPS.length) {
       try {
-        const input = { riders: DB.riders, crisis: DB.crisis };
+        const input = planInput();
         GREEDY = PLAN = RL.Crisis.run(input);
         if (DB.crisis.claude) CLAUDE = RL.Crisis.applyClaude(input, GREEDY, DB.crisis.claude);
         if (DB.crisis.decision === "claude" && CLAUDE) PLAN = CLAUDE; // the plan every device shows
@@ -199,9 +204,10 @@
     }
     // Exam Day Crisis overlay: flooded spot + detour
     if (!crisisLayer) crisisLayer = L.layerGroup().addTo(map);
-    const csig = JSON.stringify([crisisOn(), DB.crisis?.blocked, Object.keys(DB.crisis?.detours || {})]);
+    const csig = JSON.stringify([crisisOn(), DB.crisis?.blocked, Object.keys(DB.crisis?.detours || {}), midwayList()]);
     if (csig !== crisisSig) {
       crisisSig = csig; crisisLayer.clearLayers();
+      midwayList().forEach((m) => { if (RL.T[m.tripId]) L.marker([m.lat, m.lng], { icon: L.divIcon({ html: "🛠", className: "", iconSize: [28, 28] }) }).addTo(crisisLayer).bindTooltip(`${tripLabel(RL.T[m.tripId])} broke down ${m.place} at ${RL.fmt(m.at)}`); });
       if (crisisOn() && DB.crisis.blocked) {
         const b = DB.crisis.blocked, s = b.spot || { lat: (b.a.lat + b.b.lat) / 2, lng: (b.a.lng + b.b.lng) / 2 };
         L.marker([s.lat, s.lng], { icon: L.divIcon({ html: "🌊", className: "", iconSize: [28, 28] }) }).addTo(crisisLayer).bindTooltip(`Flooded road: ${b.a.name} ↔ ${b.b.name}`);
@@ -330,7 +336,7 @@
     seenAlerts = new Set(list.map((a) => a.ts));
     $("#alertList").innerHTML = list.map((a) => `<div class="al ${a.level}">${a.scope === myRoute ? "📍 " : ""}${esc(a.text)}<small>${a.scope === "all" ? "All students" : esc(RL.R[a.scope]?.code || "route")} · ${a.auto ? "auto (crowd/AI)" : "transport office"} · ${new Date(a.ts).toLocaleString([], { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}</small></div>`).join("") || '<p class="muted">No alerts in the last 3 days.</p>';
     // while the red crisis banner shows, crisis alerts stay in the Alerts tab only (no second banner on phones)
-    const mine = list.filter((a) => forMe(a) && !P.dismissed.includes(a.ts) && !(a.crisis && crisisOn()));
+    const mine = list.filter((a) => forMe(a) && !P.dismissed.includes(a.ts) && !(a.crisis && planOn()));
     const cnt = $("#alertCount"); cnt.textContent = mine.length; cnt.classList.toggle("hidden", !mine.length);
     const top = mine.find((a) => a.level === "high") || mine[0]; const b = $("#alertBanner");
     if (top) { b.className = "banner " + top.level; b.innerHTML = `<span>🚨 ${esc(top.text)}</span><button title="Dismiss">✕</button>`; b.querySelector("button").onclick = () => { P.dismissed.push(top.ts); P.dismissed = P.dismissed.slice(-200); saveP(); renderAlerts(); }; }
@@ -527,10 +533,10 @@
   function renderCrisisAdmin() {
     if (!document.body.classList.contains("admin") || !$("#tab-admin").classList.contains("on")) return;
     const c = draft();
-    $("#crisisState").textContent = crisisOn() ? (DB.crisis.simulated ? "ACTIVE · simulated" : "ACTIVE") : "off";
-    $("#crisisState").className = "pill " + (crisisOn() ? "p-bad" : "p-info");
+    $("#crisisState").textContent = crisisOn() ? (DB.crisis.simulated ? "ACTIVE · simulated" : "ACTIVE") : midwayList().length ? "bus broke down on the way" : "off";
+    $("#crisisState").className = "pill " + (planOn() ? "p-bad" : "p-info");
     // live results right under the buttons (on phones the full plan is far below the settings)
-    $("#crisisSummary").innerHTML = crisisOn() && PLAN ? `<div class="metrics compact">
+    $("#crisisSummary").innerHTML = planOn() && PLAN ? `<div class="metrics compact">
       <div class="metric"><span>📝 Would miss their exam</span><b><span class="${PLAN.before.examMiss ? "bad" : "good"}">${PLAN.before.examMiss}</span><span class="arrow">→</span><span class="${PLAN.after.examMiss ? "bad" : "good"}">${PLAN.after.examMiss}</span></b></div>
       <div class="metric"><span>🚶 Without transport</span><b><span class="${PLAN.before.stranded ? "bad" : "good"}">${PLAN.before.stranded}</span><span class="arrow">→</span><span class="${PLAN.after.stranded ? "bad" : "good"}">${PLAN.after.stranded}</span></b></div>
     </div><p class="small"><b>${PLAN.decidedBy === "claude" ? "🤖" : "⚙️"} ${decidedBy()}</b> · <a href="#crisisPlan">full plan ↓</a></p>` : "";
@@ -539,7 +545,69 @@
     [["#cSurge", "surgePct"], ["#cSpare", "spare"], ["#cAutos", "autos"]].forEach(([id, f]) => { if (document.activeElement !== $(id)) $(id).value = c[f] ?? 0; });
     keepSel($("#cBlock"), `<option value="">— no road blocked —</option>` + RL.Crisis.segments().map((s) => `<option value="${esc(s.key)}">${esc(s.label)} (${s.routes.length} route${s.routes.length > 1 ? "s" : ""})</option>`).join(""));
     if (!cdDirty) $("#cBlock").value = segKey(c.blocked);
-    renderDetourInfo(); renderCrisisPlan();
+    renderMidwayAdmin(); renderDetourInfo(); renderCrisisPlan();
+  }
+
+  // ---------- v8: buses that break down ON THE WAY ----------
+  const segOptions = (tripId) => { const r = RL.R[RL.T[tripId].routeId]; return r.stops.slice(0, -1).map((s, k) => `<option value="${k}">between ${esc(s.name)} and ${esc(r.stops[k + 1].name)}</option>`).join(""); };
+  async function withStand(m) { // nearest real auto/taxi stand to the breakdown spot (OpenStreetMap)
+    try { const st = (await RL.loadTaxiStands(m, 6)).find((x) => x.type !== "Bus station"); if (st) return { ...m, standName: st.name, standKm: +st.km.toFixed(1) }; } catch {}
+    return { ...m, standName: "", standKm: null };
+  }
+  async function saveMidway(list) {
+    // publish immediately (works with or without Exam Day Crisis); an older Claude decision is stale now
+    await post({ action: "crisis", op: "set", crisis: { ...clone(DB.crisis), midway: list, decision: "greedy", claude: null, decisionNote: list.length ? "Re-planned by the on-device optimiser after a breakdown on the way." : "" } }, { admin: true });
+    if (CD) CD.midway = clone(list);
+  }
+  async function midwayAlert(m) {
+    const t = RL.T[m.tripId]; if (!t) return;
+    try { await RL.api.post({ action: "alert", crisis: true, pin: P.pin, level: "high", scope: t.routeId, text: `🛠 ${tripLabel(t)} broke down ON THE WAY ${m.place} at ${RL.fmt(m.at)}${DB.crisis.simulated ? " (SIMULATED)" : ""}. Students on board: stay together at the bus — your rescue plan is in RouteLess. Students at later stops: check your new plan.` }); } catch {}
+  }
+  function renderMidwayAdmin() {
+    const box = $("#cMidway"); if (!box) return;
+    const list = midwayList().filter((m) => RL.T[m.tripId]);
+    const reports = (DB.breakdownReports || []).filter((r) => RL.T[r.tripId] && !list.some((m) => m.tripId === r.tripId));
+    const byTrip = {}; reports.forEach((r) => (byTrip[r.tripId] = byTrip[r.tripId] || []).push(r));
+    box.innerHTML = (list.map((m, i) => {
+      const s = PLAN && PLAN.trips[m.tripId], onb = PLAN ? PLAN.stranded.filter((p) => p.tripId === m.tripId) : [];
+      return `<div class="alt"><div><b>🛠 ${esc(tripName(m.tripId))}</b> broke down ${esc(m.place)} at ${RL.fmt(m.at)}<br><span class="muted small">${esc(m.source || "transport cell")} · ${onb.length} stranded on board · ${s && s.replacedBy ? `rescue: ${esc(s.replacedBy.replace("rescue: ", "").split(" (")[0])}, ${PLAN.repDelay[m.tripId]} min late` : "no rescue bus free; riders re-seated / autos"}${m.standName ? ` · nearest auto stand: ${esc(m.standName)} (${m.standKm} km)` : ""}</span></div><button class="ghost" data-mwdel="${i}">Remove</button></div>`;
+    }).join("") || '<p class="muted small">No breakdowns on the way. Students report them from the Report tab; 2 reports confirm one automatically.</p>')
+      + Object.entries(byTrip).map(([tid, rs]) => `<div class="alt"><div><b>⚠️ ${esc(tripName(tid))}</b>: ${rs.length} student report(s) ${esc(rs[0].place)} at ${RL.fmt(rs[0].at)}<br><span class="muted small">unconfirmed: needs 2 phones, or confirm it yourself</span></div><button data-mwok="${esc(tid)}">Confirm</button></div>`).join("");
+    $$("[data-mwdel]").forEach((b) => (b.onclick = async () => { const l = clone(midwayList()); l.splice(+b.dataset.mwdel, 1); try { await saveMidway(l); } catch (e) { alert(e.message); } }));
+    $$("[data-mwok]").forEach((b) => (b.onclick = async () => {
+      const rs = byTrip[b.dataset.mwok]; const m = await withStand({ ...rs[0], tripId: b.dataset.mwok, source: `confirmed by transport cell (${rs.length} report)` });
+      try { await saveMidway([...clone(midwayList()), m]); await midwayAlert(m); } catch (e) { alert(e.message); }
+    }));
+    keepSel($("#mwTrip"), RL.TRIPS.map((t) => `<option value="${esc(t.id)}">${esc(tripLabel(t))}</option>`).join("") || `<option value="">No routes</option>`);
+    if ($("#mwTrip").value && $("#mwSeg").dataset.trip !== $("#mwTrip").value) { $("#mwSeg").innerHTML = segOptions($("#mwTrip").value); $("#mwSeg").dataset.trip = $("#mwTrip").value; $("#mwTime").value = RL.fmt(RL.Crisis.midwayAt($("#mwTrip").value, 0).at).padStart(5, "0"); }
+  }
+  // breakdown time: "now" if the bus is running right now, else when it was scheduled to be at that spot
+  const nowOrScheduled = (tid, sched) => { const t = RL.T[tid], now = RL.istNowMin(); return now >= RL.toMin(t.time) - 5 && now <= arrAt(t) + 60 ? now : sched; };
+  // student on the bus: "it broke down on the way" (GPS first, "between which stops" as fallback)
+  async function reportBreakdown(segK) {
+    const tid = $("#rTrip").value, t = RL.T[tid]; if (!t) return;
+    let m = null;
+    if (segK == null) {
+      $("#reportMsg").innerHTML = '<div class="toast">📍 Getting your location…</div>';
+      const pos = await new Promise((res) => { if (!navigator.geolocation) return res(null); navigator.geolocation.getCurrentPosition((p) => res({ lat: p.coords.latitude, lng: p.coords.longitude }), () => res(null), { timeout: 8000, maximumAge: 60000 }); });
+      if (pos) { const loc = RL.Crisis.locateOnRoute(tid, pos); if (loc.offRouteKm <= 5) m = { lat: +pos.lat.toFixed(5), lng: +pos.lng.toFixed(5), place: loc.place, after: loc.after, at: nowOrScheduled(tid, RL.Crisis.midwayAt(tid, loc.after).at) }; }
+      if (!m) {
+        $("#bdSeg").innerHTML = segOptions(tid); $("#bdForm").classList.remove("hidden");
+        $("#reportMsg").innerHTML = `<div class="note">${pos ? "Your location is more than 5 km from this bus route" : "Location is not available"}, so pick where it broke down.</div>`; return;
+      }
+    } else { m = RL.Crisis.midwayAt(tid, segK); m.at = nowOrScheduled(tid, m.at); delete m.tripId; }
+    try { await post({ action: "breakdown", routeId: t.routeId, time: t.time, clientId: P.clientId, name: P.profile.name, ...m }); }
+    catch (e) { $("#reportMsg").innerHTML = `<div class="note">Could not send (${esc(e.message)}). Try again, or call the transport cell.</div>`; return; }
+    $("#bdForm").classList.add("hidden");
+    const confirmed = midwayList().some((x) => x.tripId === tid);
+    $("#reportMsg").innerHTML = `<div class="toast">🛠 Breakdown reported ${esc(m.place)} at ${RL.fmt(m.at)}. ${confirmed ? "Confirmed: everyone on this bus now has a rescue plan (red banner at the top)." : "It is confirmed as soon as one more student on the bus reports it, or the transport cell confirms it. Stay together at the bus."}</div>`;
+  }
+  async function addMidway() {
+    const tid = $("#mwTrip").value; if (!RL.T[tid]) return;
+    let m = RL.Crisis.midwayAt(tid, +$("#mwSeg").value || 0);
+    if ($("#mwTime").value) m.at = RL.toMin($("#mwTime").value);
+    m = await withStand({ ...m, source: "transport cell" });
+    try { await saveMidway([...clone(midwayList()).filter((x) => x.tripId !== tid), m]); await midwayAlert(m); } catch (e) { alert(e.message); }
   }
   function renderDetourInfo() {
     const c = draft(); if (!c.blocked) { $("#cDetour").innerHTML = ""; return; }
@@ -560,7 +628,7 @@
   function renderCrisisPlan() {
     const el = $("#crisisPlan"); const c = draft();
     if (!RL.TRIPS.length) { el.innerHTML = ""; return; }
-    const live = crisisOn() && !cdDirty;
+    const live = planOn() && !cdDirty;
     let pl; try { pl = live && PLAN ? PLAN : RL.Crisis.run({ riders: DB.riders, crisis: c }); } catch (e) { console.error("crisis preview", e); el.innerHTML = '<div class="note">The plan could not be computed.</div>'; return; }
     window.__lastPlan = pl;
     const b = pl.before, a = pl.after;
@@ -612,8 +680,8 @@
   }
   let claudeBusy = false;
   async function decideWithClaude() {
-    if (!crisisOn() || !RL.TRIPS.length || claudeBusy) return;
-    const input = { riders: DB.riders, crisis: DB.crisis };
+    if (!planOn() || !RL.TRIPS.length || claudeBusy) return;
+    const input = planInput();
     const greedy = RL.Crisis.run(input);
     const save = (patch) => post({ action: "crisis", op: "set", crisis: { ...clone(DB.crisis), ...patch } }, { admin: true });
     if (!(await aiReady())) { await save({ decision: "greedy", decisionNote: "No ANTHROPIC_API_KEY on the server, so the on-device optimiser decided.", claude: null, claudeMeta: null }); return; }
@@ -654,7 +722,9 @@
   }
   async function applyCrisis() {
     // a changed situation invalidates Claude's old decision: publish the on-device plan first, then ask Claude
-    const c = Object.assign(draft(), { active: true, decision: "greedy", decisionNote: "", claude: null, claudeMeta: null });
+    // keep breakdowns students confirmed meanwhile (union by trip; the admin's own entries win)
+    const mwMerged = Object.values(Object.fromEntries([...midwayList(), ...(draft().midway || [])].map((m) => [m.tripId, m])));
+    const c = Object.assign(draft(), { active: true, decision: "greedy", decisionNote: "", claude: null, claudeMeta: null, midway: mwMerged });
     $("#cMsg").textContent = "Publishing the plan…";
     try {
       await post({ action: "crisis", op: "set", crisis: c }, { admin: true });
@@ -690,22 +760,35 @@
       const seg = segs.find((s) => /b ?c road|bantwal/i.test(s.label) && /farang/i.test(s.label)) || segs[0];
       cdDirty = false; CD = Object.assign(draft(), { broken, surgePct: 40, autos: 10, spare: 1, simulated: true, blocked: seg ? { a: seg.a, b: seg.b } : null, detours: {} }); cdDirty = true;
       if (seg) { msg.textContent = "Flooding a road and asking OSRM for a detour…"; await findDetour(); }
+      // v8: one more bus breaks down ON THE WAY: the busiest trip that is still running, between its 2nd and 3rd stop
+      const blockedNow = new Set(RL.Crisis.blockedRoutes(CD));
+      const count = (id) => DB.riders.filter((r) => `${r.routeId}|${r.time}` === id).length;
+      const cand = RL.TRIPS.filter((t) => !broken.includes(t.id) && !blockedNow.has(t.routeId) && RL.R[t.routeId].stops.length >= 3).sort((a, b) => count(b.id) - count(a.id))[0]
+        || RL.TRIPS.filter((t) => !broken.includes(t.id)).sort((a, b) => count(b.id) - count(a.id))[0];
+      let mwSim = null;
+      if (cand) {
+        msg.textContent = "Breaking one bus down on the way and finding the nearest auto stand…";
+        const r = RL.R[cand.routeId]; mwSim = await withStand({ ...RL.Crisis.midwayAt(cand.id, r.stops.length >= 4 ? 1 : 0), source: "simulated" });
+        CD.midway = [mwSim];
+      }
       msg.textContent = "Publishing the crisis plan…";
       await applyCrisis();
+      if (mwSim) await midwayAlert(mwSim);
       msg.textContent = "✔ Simulated crisis is live. All simulated data is labelled.";
     } catch (e) { msg.textContent = "✖ " + e.message; }
     $("#simBtn").disabled = false;
   }
   async function resetCrisis() {
     try {
-      const was = crisisOn();
+      const was = planOn();
       await post({ action: "crisis", op: "reset" }, { admin: true }); cdDirty = false; CD = null; lastExplain = "";
       if (was) { try { await RL.api.post({ action: "alert", level: "low", scope: "all", text: "✅ The Exam Day Crisis is over. Normal timetable restored.", pin: P.pin }); } catch {} await refresh(); }
       $("#simMsg").textContent = "Crisis reset; simulated students removed.";
     } catch (e) { $("#simMsg").textContent = "✖ " + e.message; }
   }
   function localExplain(x) {
-    return `${x.simulated ? "SIMULATED DRILL. " : ""}${x.brokenTrips.length} bus trip(s) broke down (${x.brokenTrips.join(", ") || "none"}), demand rose ${x.surgePct}%${x.blockedRoad ? ` and the road ${x.blockedRoad} is flooded` : ""}.
+    const mw = (x.brokeDownOnTheWay || []).map((m) => `${m.bus} broke down on the way ${m.where} at ${m.at} with ${m.strandedOnBoard} students on board; ${m.pickedUp} of them are picked up at the spot${m.rescue ? ` (${m.rescue.replace("rescue: ", "").split(" (")[0]})` : ""}.`).join(" ");
+    return `${x.simulated ? "SIMULATED DRILL. " : ""}${mw ? mw + "\n" : ""}${x.brokenTrips.length} bus trip(s) broke down before leaving (${x.brokenTrips.join(", ") || "none"}), demand rose ${x.surgePct}%${x.blockedRoad ? ` and the road ${x.blockedRoad} is flooded` : ""}.
 What the plan does: ${x.replacements.length ? x.replacements.map((r) => `${r.label} is covered by a ${r.from.split(" (")[0]}`).join("; ") + ". " : "No replacement bus was available. "}${x.detours.length ? x.detours.map((d) => d.found ? `${d.route} takes a detour (+${d.extraMin} min)` : `${d.route} cannot pass, so its riders are moved`).join("; ") + ". " : ""}Exam students are seated first, earliest exam first; the others take the next bus at their stop or at a nearby stop, and ${x.autosUsed} shared-auto pod(s) of 4 cover the rest.
 Result: students missing an exam ${x.before.examMiss} → ${x.after.examMiss}; students left without transport ${x.before.stranded} → ${x.after.stranded}.
 ${x.after.examMiss ? `Still at risk: ${x.after.examMiss} exam student(s). Ask the exam cell for a short grace period and send one more auto or van to their stops.` : "Every exam student reaches college in time."} ${x.after.stranded ? `Arrange ${Math.ceil(x.after.stranded / 4)} more autos for the ${x.after.stranded} students still without transport.` : ""}`;
@@ -713,7 +796,8 @@ ${x.after.examMiss ? `Still at risk: ${x.after.examMiss} exam student(s). Ask th
   async function explainPlan() {
     const pl = window.__lastPlan; if (!pl) return; const c = draft();
     const x = { simulated: !!c.simulated, before: pl.before, after: pl.after, replacements: pl.replacements, brokenTrips: c.broken.map(tripName), blockedRoad: c.blocked ? `${c.blocked.a.name} ↔ ${c.blocked.b.name}` : null,
-      detours: pl.blockedRoutes.map((id) => ({ route: RL.R[id].code, found: !!c.detours?.[id]?.found, extraMin: c.detours?.[id]?.extraMin || 0 })), surgePct: c.surgePct, autosUsed: pl.autosUsed, autosAvailable: c.autos };
+      detours: pl.blockedRoutes.map((id) => ({ route: RL.R[id].code, found: !!c.detours?.[id]?.found, extraMin: c.detours?.[id]?.extraMin || 0 })), surgePct: c.surgePct, autosUsed: pl.autosUsed, autosAvailable: c.autos,
+      brokeDownOnTheWay: (pl.midway || []).map((m) => { const st = pl.stranded.filter((p) => p.tripId === m.tripId); return { bus: tripName(m.tripId), where: m.place, at: RL.fmt(m.at), strandedOnBoard: st.length, pickedUp: st.filter((p) => pl.results[p.id]?.mode !== "none").length, rescue: pl.trips[m.tripId]?.replacedBy || null }; }) };
     $("#explainOut").textContent = "Explaining…";
     try { const j = await callAI("explain", { context: x }); lastExplain = j.answer + "\n\n— explained by Claude (" + (j.model || "Anthropic API") + ")"; }
     catch { lastExplain = localExplain(x) + "\n\n— on-device explanation (cloud AI not configured)"; }
@@ -721,17 +805,19 @@ ${x.after.examMiss ? `Still at risk: ${x.after.examMiss} exam student(s). Ask th
   }
   function renderCrisisBanner() {
     const el = $("#crisisBanner");
-    if (!crisisOn() || !PLAN) { el.className = "banner crisis hidden"; return; }
+    if (!planOn() || !PLAN) { el.className = "banner crisis hidden"; return; }
     const mine = P.registered && P.myRid ? RL.Crisis.personal(PLAN, P.myRid) : null;
     let txt;
     if (mine) txt = mine.text;
     else {
       const st = PLAN.trips[P.profile.tripId];
-      txt = (st ? (st.broken ? `Your usual bus ${tripLabel(st.trip)} has broken down${st.replacedBy ? "; a replacement runs +15 min" : ""}.` : st.blocked ? `Your route is hit by the flooded road${st.detour ? ` (detour +${st.detour} min)` : ""}.` : `Your usual bus ${tripLabel(st.trip)} is running.`) + " " : "")
+      txt = (st ? (st.midway ? `Your usual bus ${tripLabel(st.trip)} broke down on the way ${st.midway.place} at ${RL.fmt(st.midway.at)}${st.replacedBy ? `; a rescue bus continues the route about ${PLAN.repDelay[st.trip.id]} min late` : ""}.` : st.broken ? `Your usual bus ${tripLabel(st.trip)} has broken down${st.replacedBy ? "; a replacement runs +15 min" : ""}.` : st.blocked ? `Your route is hit by the flooded road${st.detour ? ` (detour +${st.detour} min)` : ""}.` : `Your usual bus ${tripLabel(st.trip)} is running.`) + " " : "")
         + `Tap "I ride this bus" (tick "I have an exam today") to get a reserved seat in the plan.`;
     }
+    const n = PLAN.stranded.length, onRoad = n ? ` · ${n} student${n > 1 ? "s" : ""} stranded on the road, ${n - PLAN.stranded.filter((p) => PLAN.results[p.id]?.mode === "none").length} with a pickup` : "";
+    const title = crisisOn() ? `🚨 <b>EXAM DAY CRISIS${DB.crisis.simulated ? " · SIMULATED DRILL" : ""}</b>` : `🛠 <b>BUS BROKE DOWN ON THE WAY${DB.crisis.simulated ? " · SIMULATED" : ""}</b>`;
     el.className = "banner crisis";
-    el.innerHTML = `🚨 <b>EXAM DAY CRISIS${DB.crisis.simulated ? " · SIMULATED DRILL" : ""}</b>: students at risk of missing an exam ${PLAN.before.examMiss} → ${PLAN.after.examMiss} after re-planning · <b>${PLAN.decidedBy === "claude" ? "🤖" : "⚙️"} ${decidedBy()}</b>.<span class="cb-plan">${esc(txt)}</span>`;
+    el.innerHTML = `${title}: students at risk of missing an exam ${PLAN.before.examMiss} → ${PLAN.after.examMiss} after re-planning${esc(onRoad)} · <b>${PLAN.decidedBy === "claude" ? "🤖" : "⚙️"} ${decidedBy()}</b>.<span class="cb-plan">${esc(txt)}</span>`;
   }
 
   // ---------- render & events ----------
@@ -799,7 +885,12 @@ ${x.after.examMiss ? `Still at risk: ${x.after.examMiss} exam student(s). Ask th
     };
     $$("#tabs button").forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
     $$(".role button").forEach((b) => (b.onclick = () => setRole(b.dataset.role)));
-    $$(".rb").forEach((b) => (b.onclick = () => submitReport(b.dataset.out)));
+    $$(".rb[data-out]").forEach((b) => (b.onclick = () => submitReport(b.dataset.out)));
+    // v8: broke down on the way
+    $("#bdBtn").onclick = () => reportBreakdown(null);
+    $("#bdSend").onclick = () => reportBreakdown(+$("#bdSeg").value || 0);
+    $("#mwAdd").onclick = addMidway;
+    $("#mwTrip").onchange = () => { delete $("#mwSeg").dataset.trip; renderMidwayAdmin(); };
     $("#rTrip").onchange = () => { $("#rTrip").dataset.touched = "1"; };
     $("#gTrip").onchange = () => { $("#gTrip").dataset.touched = "1"; renderGroups(); };
     $("#askForm").onsubmit = (e) => { e.preventDefault(); const q = $("#askInput").value; $("#askInput").value = ""; ask(q); };

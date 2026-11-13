@@ -11,6 +11,12 @@ const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const rid = () => "p" + Math.random().toString(36).slice(2, 10);
 const point = (p) => (p && p.lat ? { name: str(p.name, 80), lat: num(p.lat, -90, 90), lng: num(p.lng, -180, 180) } : null);
 
+function cleanMidway(m) {
+  if (!m || !m.tripId || !m.lat) return null;
+  return { tripId: str(m.tripId, 40), lat: num(m.lat, -90, 90), lng: num(m.lng, -180, 180), place: str(m.place, 100), at: num(m.at, 0, 1439), after: num(m.after, 0, 40),
+    standName: str(m.standName, 80), standKm: m.standKm == null ? null : num(m.standKm, 0, 50), source: str(m.source, 60), ts: Number(m.ts) || Date.now() };
+}
+
 function cleanCrisis(c = {}) {
   const detours = {};
   Object.entries(c.detours || {}).slice(0, 50).forEach(([k, d]) => {
@@ -22,6 +28,8 @@ function cleanCrisis(c = {}) {
     surgePct: num(c.surgePct, 0, 300), autos: num(c.autos, 0, 200), spare: num(c.spare, 0, 50),
     blocked: c.blocked && c.blocked.a && c.blocked.b ? { a: point(c.blocked.a), b: point(c.blocked.b), spot: point(c.blocked.spot) } : null,
     detours, startedAt: c.active ? Number(c.startedAt) || Date.now() : null,
+    // v8: buses that broke down ON THE WAY (works with or without Exam Day Crisis mode)
+    midway: (c.midway || []).slice(0, 20).map(cleanMidway).filter(Boolean),
     // v6: who decided the live plan, Claude's validated plan (real ids) and the comparison shown to the admin
     decision: c.decision === "claude" && c.claude ? "claude" : "greedy",
     decisionNote: str(c.decisionNote, 300),
@@ -46,6 +54,7 @@ function publicView(db) {
     overrides: db.overrides[today] || {}, operators: db.operators, config: db.config,
     riders: Object.values(db.riders).map(({ clientId, ...r }) => ({ ...r, name: r.name.split(" ")[0] })),
     crisis: db.crisis || emptyCrisis(),
+    breakdownReports: (db.breakdownReports || []).filter((r) => r.ts > Date.now() - 3 * 3600e3).map(({ clientId, ...r }) => r),
     today, storage: storageKind, adminLocked: !!process.env.ADMIN_PIN, serverTime: Date.now(),
   };
 }
@@ -87,6 +96,7 @@ export default async function handler(req, res) {
         db.crisis = emptyCrisis();
         Object.keys(db.riders).forEach((k) => { if (k.startsWith("sim-")) delete db.riders[k]; });
         db.alerts = db.alerts.filter((a) => !a.crisis); // crisis alerts end with the crisis
+        db.breakdownReports = [];
       } else if (b.op === "simulate") { // replace the simulated students (clearly flagged sim:true)
         Object.keys(db.riders).forEach((k) => { if (k.startsWith("sim-")) delete db.riders[k]; });
         (b.simRiders || []).slice(0, 400).forEach((s, i) => {
@@ -96,6 +106,27 @@ export default async function handler(req, res) {
         });
       } else {
         db.crisis = cleanCrisis({ ...b.crisis, startedAt: db.crisis?.startedAt });
+      }
+      break;
+    }
+    case "breakdown": { // v8: a student on the bus reports it broke down on the way
+      if (!route || !route.times.includes(b.time)) return send(res, 400, { error: "bad breakdown report" });
+      const cid = str(b.clientId, 60); if (!cid) return send(res, 400, { error: "clientId" });
+      const tripId = `${b.routeId}|${b.time}`;
+      db.breakdownReports = (db.breakdownReports || []).filter((r) => r.ts > Date.now() - 3 * 3600e3 && !(r.clientId === cid && r.tripId === tripId));
+      const rep = cleanMidway({ ...b, tripId, source: "student report" }); if (!rep) return send(res, 400, { error: "location needed" });
+      db.breakdownReports.push({ ...rep, clientId: cid, by: str(b.name, 40).split(" ")[0] || "student", ts: Date.now() });
+      // confirmed once 2 different phones report the same bus within 30 min (one prank tap can't re-plan everyone)
+      const recent = db.breakdownReports.filter((r) => r.tripId === tripId && r.ts > Date.now() - 30 * 60e3);
+      const phones = new Set(recent.map((r) => r.clientId));
+      db.crisis = db.crisis || emptyCrisis(); db.crisis.midway = db.crisis.midway || [];
+      if (phones.size >= 2 && !db.crisis.midway.some((m) => m.tripId === tripId)) {
+        const avg = (k) => recent.reduce((s, r) => s + r[k], 0) / recent.length;
+        db.crisis.midway.push(cleanMidway({ ...recent[0], lat: avg("lat"), lng: avg("lng"), at: Math.min(...recent.map((r) => r.at)), source: `${phones.size} student reports` }));
+        // any earlier Claude decision is now stale (it could seat people on this bus): re-plan with the optimiser
+        db.crisis.decision = "greedy"; db.crisis.claude = null; db.crisis.decisionNote = "Re-planned by the on-device optimiser after a breakdown on the way.";
+        db.alerts.unshift({ level: "high", scope: b.routeId, crisis: true, ts: Date.now(),
+          text: `🛠 ${route.code} ${b.time} broke down ON THE WAY ${recent[0].place} (${phones.size} students reported). Students on board: stay together at the bus and open RouteLess for your rescue plan.` });
       }
       break;
     }

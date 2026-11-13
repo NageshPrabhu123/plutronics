@@ -460,6 +460,63 @@ v7: last step, no new features. Get it live and ready for judges.
 
 ---
 
+## v8: A bus breaks down on the way
+
+### Prompts 10–11 (exact text)
+
+```
+if a bus got technical issues in between the way what to do?
+```
+The AI explained that RouteLess then treated every breakdown as "the bus never left": students already **on the bus** were wrongly told to catch another bus from their *home stop*, and there was no way to report "it broke down while I'm on it". It proposed a fix, and the reply was:
+```
+it must overcome properly
+```
+
+### How it works
+- **Reporting:**
+  - **Students on the bus:** in the Report tab, tap **🛠 Broke down on the way (I'm on the bus)**. The phone's GPS places the bus on its route (nearest segment). Without GPS, or more than 5 km off the route, the student picks "between stop A and stop B".
+  - **Two-phone confirmation:** a breakdown is **confirmed automatically when 2 different phones report the same bus within 30 min**, so one prank tap can't re-plan everyone. The route then gets a high alert: "stay together at the bus".
+  - **Transport cell:** can **Confirm** a single report, **Add** a breakdown (bus + "between which stops" + time) or **Remove** one (Admin → Exam Day Crisis → 5).
+  - **Without crisis mode:** a breakdown on the way re-plans on its own. The banner reads "🛠 BUS BROKE DOWN ON THE WAY".
+- **Who is where** (`crisis.js`):
+  - Students who boarded **before** the breakdown point are now **stranded at the spot** from the breakdown time on.
+  - Students at **later** stops still wait at their stops.
+- **Rescue options for stranded students, all from the spot:**
+  1. **Rescue bus:** a depot spare or an under-used bus. It leaves the college yard 10 min after the call, drives to the spot (road distance at 30 km/h), then continues the route; its real delay is computed per breakdown. Stranded students get rescue buses first.
+  2. **Other buses** that pass within 1.5 km of the spot *after* the breakdown. A bus that has already passed can't pick anyone up.
+  3. **Shared autos (pods of 4)** from the **nearest real taxi/auto stand on OpenStreetMap** (looked up when the breakdown is added). If none is mapped, the auto is "arranged by the transport cell".
+  
+  Exam students go first, earliest exam first, and the optimiser picks whatever reaches college **before the exam**. For example, it chose an auto (reaching 8:36) over a rescue bus 39 min late (after the 08:50 deadline).
+- **Display:**
+  - **Personal banner:** *"Your bus Puttur 06:45 broke down between Kalladka and B C Road Bus Station at 7:29 → stay at the bus: a shared auto (pod A1) … picks your group up at about 7:46; you'll reach college by 8:36, before your 09:00 exam."*
+  - **Other screens:** "Broken down / Replacement bus" in Live Status, 🛠 on the map, "N stranded on the road, N with a pickup" in the banner, and the breakdown included in "Explain this plan".
+- **Claude:** its context marks `brokeDownOnTheWay` trips (place, time, stranded count, rescue delay) and `strandedAtBreakdownSince` students. Their options already exclude buses that have passed the spot. The server safety check is unchanged, and a confirmed breakdown resets an older Claude decision to the optimiser, because it could seat people on the broken bus.
+
+### Results (all tests passing, no console errors)
+- **Breakdown alone, no crisis mode:**
+  - 1 report → not confirmed; the same phone again → still 1; a 2nd phone → **confirmed** ("2 student reports") with a high alert.
+  - Device ids are not exposed.
+  - The Puttur student (boarded at stop 0, 09:00 exam) was treated as stranded at the spot and got the auto plan above. Students at risk of missing their exam **1 → 0**.
+- **Full "Simulate exam day crisis"** (it now also breaks one more bus down on the way): students missing their exam **30 → 2**, without transport **94 → 0**, **27 students stranded on the road, all 27 with a pickup** (20 rescued by the depot bus, 39 min late).
+- **Claude path on that saved state** (14/14): 27 students marked stranded; every on-the-way breakdown listed; stranded students offered only buses that reach the spot after the breakdown; the safety check and `applyClaude` agree with the optimiser.
+- **Phone (375px):**
+  - the Report button is 330×64 px; with GPS unavailable, the "between which stops" fallback appears with the 4 real segments, and the report goes through;
+  - the admin breakdown section has no overflow and no tap target under 40px.
+- **Reset:** clears the breakdowns, the student breakdown reports, the crisis and the simulated students, and keeps real riders.
+- **Regression:** Vercel/Upstash 12/12.
+
+### Bugs found and fixed
+| # | Bug | Fix |
+|---|---|---|
+| 39 | A breakdown on the way was handled as "the bus never left": on-board students were sent back to their home stop's buses. | Riders before the breakdown point are stranded **at the spot**, from the breakdown time on; only buses still to pass the spot, a rescue bus or autos can pick them up. |
+| 40 | Every replacement was a flat +15 min, whatever the distance. | A rescue bus's delay = dispatch + drive from the college yard to the spot, compared with the schedule. |
+| 41 | The `.rb` click handler would have treated the new breakdown button as a "report" with no outcome. | Report handlers bind only to `.rb[data-out]`; the breakdown button has its own handler. |
+| 42 | "Activate crisis" could overwrite a breakdown that students confirmed meanwhile. | Activation merges the server's breakdowns with the admin's (by trip). |
+| 43 | The banner said "from the nearest auto stand" even when OpenStreetMap has none mapped within 6 km. | It says "arranged by the transport cell" unless a real stand was found. |
+| 44 | The admin list ran the time into the source ("7:292 student reports"). | Line break between them. |
+
+---
+
 ## 4. APIs and libraries used
 
 | API / library | Used for | Key needed? |

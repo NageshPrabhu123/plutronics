@@ -30,6 +30,7 @@ const CRISIS_SYSTEM = `You are the dispatcher for a college transport cell on an
 You get JSON: trips (seats, broken, blocked road + detour minutes, arrival time), spare depot buses, trips allowed to lend their bus (donorCandidates), shared autos (pods of up to rules.podSize students), and every student with their exam time ("" = no exam) and the ONLY options they can use:
 opts = [tripId, boardTime, arriveCollegeTime, note]. note "ifReplaced" = that trip is broken and only runs if you move a bus onto it (it then leaves 15 min late, already included in the times). note "nearby x km" = the student must first get to a nearby stop.
 auto = [departTime, arriveTime] if a shared auto from their stop is possible.
+Some buses broke down ON THE WAY (trips with "brokeDownOnTheWay"). Students with "strandedAtBreakdownSince" are standing at that breakdown spot (their "stop" is the spot): they are the most vulnerable, so get them moving first; their opts only contain buses that still pass the spot after the breakdown, and a rescue bus on their own trip arrives "rescueDelayMin" late.
 You also get "greedy": the plan of our on-device greedy optimiser and its results. Try to beat it; never do worse.
 
 Decide:

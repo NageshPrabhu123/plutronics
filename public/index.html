@@ -100,6 +100,11 @@
           <button data-out="late" class="rb warn">⏱️<span>Came late</span></button>
           <button data-out="noshow" class="rb bad">❌<span>Didn't come</span></button>
           <button data-out="full" class="rb full">🈵<span>Too full to board</span></button>
+          <button id="bdBtn" class="rb bad wide" type="button">🛠<span>Broke down on the way (I'm on the bus)</span></button>
+        </div>
+        <div id="bdForm" class="bdform hidden">
+          <p class="small">Couldn't use your location. Where did it break down?</p>
+          <div class="row gap"><select id="bdSeg" style="flex:1"></select><button id="bdSend" type="button">Send breakdown report</button></div>
         </div>
         <div id="reportMsg"></div>
         <h3>Today's reports</h3><div id="todayReports"></div>
@@ -182,6 +187,10 @@
           </div>
         </div>
         <p class="small muted">4 · Exam students: students tick "I have an exam today" when they tap "I ride this bus"; they are seated first, earliest exam first.</p>
+        <h4>5 · Bus broke down on the way</h4>
+        <p class="small muted">Students already on board are stranded at the spot: they get a rescue bus, a passing bus or a shared auto from the nearest stand. Works with or without crisis mode.</p>
+        <div id="cMidway"></div>
+        <div class="row gap mwrow"><select id="mwTrip"></select><select id="mwSeg"></select><input id="mwTime" type="time" /><button id="mwAdd" type="button">🛠 Add breakdown</button></div>
         <div class="row gap"><button id="cApply">✅ Activate / update crisis plan</button><span id="cMsg" class="small"></span></div>
         <div id="crisisPlan"></div>
       </div>
