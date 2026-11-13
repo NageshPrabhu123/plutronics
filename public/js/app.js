@@ -899,10 +899,27 @@ ${x.after.examMiss ? `Still at risk: ${x.after.examMiss} exam student(s). Ask th
     el.innerHTML = `${title}: students at risk of missing an exam ${PLAN.before.examMiss} → ${PLAN.after.examMiss} after re-planning${esc(onRoad)} · <b>${PLAN.decidedBy === "claude" ? "🤖" : "⚙️"} ${decidedBy()}</b>.<span class="cb-plan">${esc(txt)}</span>`;
   }
 
+  // What-if: show the effect right inside the card (live today vs the chosen rain/day)
+  function renderWhatIf() {
+    const out = $("#whatifOut"); if (!out) return;
+    const p = P.profile.stop, t = RL.T[P.profile.tripId];
+    if (!p) { out.innerHTML = "Pick your bus stop above, then change Rain or Day to see how the delay risk of your bus changes."; return; }
+    if (!t || !tripsNear(p).some((x) => x.id === t.id)) { out.innerHTML = `No registered bus near ${esc(p.name)} yet, so there is nothing to compare. The transport cell can add routes (Admin → Load starter routes).`; return; }
+    const r = RL.R[t.routeId], dowNow = RL.istDow();
+    const base = { rain: weather.ok ? weather.rain : 0, market: r.marketDay === dowNow ? 1 : 0, monday: dowNow === 1 ? 1 : 0, exam: DB.config.examWeek ? 1 : 0 };
+    const pBase = RL.Model.predict(t.id, base).p, pNow = ROWS[t.id].pred.p;
+    const changed = W.rain !== "live" || W.day !== "today";
+    const what = [W.rain === "live" ? null : +W.rain === 0 ? "no rain" : +W.rain >= 1 ? "heavy rain" : "light rain", W.day === "today" ? null : "next " + RL.DAYS[+W.day]].filter(Boolean).join(" + ");
+    const d = Math.round((pNow - pBase) * 100);
+    out.innerHTML = changed
+      ? `${esc(r.code)} · ${RL.fmt(depAt(t, p))}: <b class="big">${pct(pBase)}% → ${pct(pNow)}%</b> chance of delay with ${esc(what)} <span class="pill p-${d > 0 ? "bad" : d < 0 ? "ok" : "info"}">${d > 0 ? "+" : ""}${d} points</span><br><span class="muted small">Reasons: ${esc(RL.reasonText(ROWS[t.id].pred))}. The forecast card above uses these conditions too.</span>`
+      : `${esc(r.code)} · ${RL.fmt(depAt(t, p))}: <b class="big">${pct(pBase)}%</b> chance of delay today (live rain forecast ${weather.ok ? weather.prob + "%" : "n/a"}). <span class="muted small">Change Rain or Day to compare.</span>`;
+  }
+
   // ---------- render & events ----------
   function safe(fn, name) { try { fn(); } catch (e) { console.error("render " + name, e); } }
   function renderAll() {
-    safe(renderHome, "home"); safe(renderStatus, "status"); safe(renderReport, "report"); safe(renderGroups, "groups"); safe(renderAlerts, "alerts"); safe(renderAdmin, "admin");
+    safe(renderHome, "home"); safe(renderWhatIf, "whatif"); safe(renderStatus, "status"); safe(renderReport, "report"); safe(renderGroups, "groups"); safe(renderAlerts, "alerts"); safe(renderAdmin, "admin");
     safe(renderCrisisBanner, "crisisBanner"); safe(renderCrisisAdmin, "crisisAdmin");
     if ($("#tab-alt").classList.contains("on")) renderAlt().catch((e) => console.error("render alt", e));
     safe(riskAlerts, "riskAlerts");

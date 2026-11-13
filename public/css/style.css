@@ -154,6 +154,8 @@ td button{padding:4px 10px!important;font-size:.8rem}
 .modal:not(.signup) .signup-only{display:none}
 .modal.admin .student-only{display:none}
 
+.whatifout{margin-top:12px;padding:12px;border-radius:10px;background:var(--bg);border:1px solid var(--line);font-size:.92rem}
+.whatifout b.big{font-size:1.3rem}
 /* ---------- welcome front page ---------- */
 body.mode-welcome{overflow:hidden}
 body:not(.mode-welcome) .welcome{display:none}

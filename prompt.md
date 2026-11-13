@@ -701,3 +701,10 @@ the dots are not visible in map
 - Live Overpass data replaces the snapshot when any of 4 public servers answers (all are tried in parallel).
 - The dots are bigger (6 px stops, 8 px stations) with white outlines; stations are orange, and the legend explains the colours.
 - **Tested:** with the live cache cleared and Overpass down, the map shows all 102 dots.
+
+### Prompt 17 (exact text, with a screenshot circling the What-if card)
+```
+this does nothing i guess
+```
+**Cause:** the What-if card did change the forecast, but only in the forecast card far above it, and only after a stop with a registered bus route was picked. Nothing visible happened inside the card itself.
+**Fix:** the card now shows its own result, comparing live conditions today with the chosen conditions. For example: *"Puttur – Mangaluru 8:22: 25% → 48% chance of delay with heavy rain (+23 points). Reasons: rain."*, and with next Monday, *"25% → 56% … rain + Monday rush"*. Without a stop or a nearby route, it says exactly what's missing.
