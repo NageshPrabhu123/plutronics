@@ -32,15 +32,10 @@ export default async function handler(req, res) {
   if (b.action === "signup") {
     if (role !== "student") return send(res, 400, { error: "Only students can sign up." });
     const email = normEmail(b.id), name = str(b.name, 40), password = String(b.password || "");
-    const key = "signup:" + (String(req.headers?.["x-forwarded-for"] || "local").split(",")[0].trim());
-    const wait = lockedFor(db, key); if (wait) return send(res, 429, { error: `Too many wrong access codes. Try again in ${wait} s.` });
-    if (!process.env.STUDENT_CODE) return send(res, 500, { error: "Student sign-up is not configured (STUDENT_CODE missing)." });
-    if (!safeEqual(String(b.code || "").trim(), process.env.STUDENT_CODE)) { const left = fail(db, key); return done(401, { error: left > 0 ? `Wrong college access code (${left} tries left).` : "Wrong college access code. Sign-up is blocked for 1 minute." }); }
     if (!EMAIL_RE.test(email) || email.length > 120) return send(res, 400, { error: "Please enter a valid email address, e.g. asha@sahyadri.edu.in." });
     if (name.length < 2) return send(res, 400, { error: "Please enter your name." });
     if (password.length < 6) return send(res, 400, { error: "Password must be at least 6 characters." });
     if (db.students[email]) return send(res, 409, { error: "This email is already registered. Log in instead." });
-    clearFails(db, key);
     db.students[email] = { email, name, ...hashPassword(password), createdAt: Date.now() };
     const user = { sub: email, role: "student", name };
     return done(200, { token: signToken(user), user: { id: email, name, role: "student" } });

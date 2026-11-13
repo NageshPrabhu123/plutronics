@@ -674,3 +674,9 @@ So students now **log in with their email address** instead of their USN, and th
 ### Notes
 - **Local test values** are in the git-ignored `.env`: `ADMIN_ID=admin`, `ADMIN_PASSWORD=Admin@123`, `STUDENT_CODE` (currently set in `.env`), and a random `SESSION_SECRET`. **Use different, strong values on Vercel.**
 - The token is kept in `localStorage`, as requested. It is HMAC-signed and expires after 7 days; logout removes it.
+
+### Prompt 14 (exact text)
+```
+remove college access code
+```
+Student sign-up now needs only email, name and password (at least 6 characters, one account per email). The `STUDENT_CODE` check, its field in the sign-up form and its lockout were removed; `STUDENT_CODE` is no longer needed on Vercel. Wrong-password lockout (5 tries → 1 minute) still applies to login.

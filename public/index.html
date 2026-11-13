@@ -264,7 +264,7 @@
         <div id="opList"></div>
       </div>
       <div class="card"><h3>🎓 Registered students</h3>
-        <p class="muted small">Students sign up with their email, a password and the college access code. Passwords are stored only as salted scrypt hashes.</p>
+        <p class="muted small">Students sign up with their email, name and a password. Passwords are stored only as salted scrypt hashes.</p>
         <div class="tablewrap"><table id="studentTable"></table></div>
       </div>
     </section>
@@ -282,9 +282,7 @@
       <form id="loginForm" autocomplete="on">
         <label><span id="lgIdLabel">Email</span><input id="lgId" type="email" autocomplete="email" required placeholder="you@college.edu" /></label>
         <label class="signup-only">Full name<input id="lgName" autocomplete="name" placeholder="Your name" /></label>
-        <label>Password<input id="lgPass" type="password" autocomplete="current-password" required /></label>
-        <label class="signup-only">College access code<input id="lgCode" autocomplete="off" placeholder="Ask your transport cell" /></label>
-        <div id="lgMsg" class="lgmsg" role="alert"></div>
+        <label>Password<input id="lgPass" type="password" autocomplete="current-password" required /></label>        <div id="lgMsg" class="lgmsg" role="alert"></div>
         <button id="lgSubmit" type="submit">Log in</button>
       </form>
       <p class="small student-only"><a href="#" id="lgToggle">New student? Sign up with your email</a></p>

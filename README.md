@@ -3,7 +3,7 @@
 **Live app:** _link coming soon_ · **Prompts & iterations:** [prompt.md](prompt.md)
 
 ## ⏱ Demo in 2 minutes
-Works on a phone. Without logging in, anyone can use **guest emergency mode**: Route Finder, Live Status, Alternatives, Alerts, the crisis banner and on-device Ask AI. **Log in** (top bar) as the **🚌 Transport cell** with the admin ID and password from the server settings, or as a **🎓 Student** with email, password and the college access code.
+Works on a phone. Without logging in, anyone can use **guest emergency mode**: Route Finder, Live Status, Alternatives, Alerts, the crisis banner and on-device Ask AI. **Log in** (top bar) as the **🚌 Transport cell** with the admin ID and password from the server settings, or as a **🎓 Student** with email, name and password.
 
 1. **Load starter routes.** Tap **Log in → 🚌 Transport cell**, then **Admin → 🚀 Load starter routes**. (Log out and **sign up as a student** for steps 2–3; log back in as the transport cell for steps 4–7.) This adds 4 real routes (Puttur, Vitla, Moodbidri, B.C. Road → Sahyadri College) on real roads; the timings are samples.
 2. **Pick a stop.** Tap **Student → My bus stop**, type `B C Road`, choose a Puttur bus, tick **📝 I have an exam today** (09:00) and tap **I ride this bus**. The forecast card shows the % chance the bus is late.
@@ -61,7 +61,7 @@ The optimiser then re-plans every seat:
 It shows **students missing their exam X → Y** and **students without transport X → Y**. With an API key, **Claude also decides the plan**; the server checks Claude's plan and the better plan wins. Every student sees a red banner with their personal plan and "Decided by Claude / on-device optimiser". "Reset crisis" restores everything. Details are in [prompt.md](prompt.md#-surprise-hurdle-the-exam-day-crisis-v5--v6).
 
 ## 🔐 Login
-- **Students:** email + password. Sign-up needs the college access code (`STUDENT_CODE`). Passwords are stored as salted `scrypt` hashes.
+- **Students:** email + password (sign-up: email, name, password; one account per email). Passwords are stored as salted `scrypt` hashes.
 - **Transport cell:** `ADMIN_ID` / `ADMIN_PASSWORD` from server environment variables.
 - **Session:** a signed 7-day token. Every change (report, "I ride this bus", any admin action) needs it, and the server answers **401** otherwise. 5 wrong passwords → 1-minute lock.
 - **Guests:** emergency mode works without login; names of other students are hidden.
@@ -82,7 +82,7 @@ Optional: create a `.env` file containing `ANTHROPIC_API_KEY=...` for the Claude
 1. Import the repo with framework preset **Other**. `vercel.json` already sets the output directory to `public/`, and `api/` holds the two functions.
 2. Storage → connect **Upstash for Redis**. This sets `KV_REST_API_URL` and `KV_REST_API_TOKEN`. Without it, reports are not kept between visits.
 3. Optional: add `ANTHROPIC_API_KEY` for Claude chat, the evidence letter and AI route discovery.
-4. **Login settings (required):** `SESSION_SECRET` (a long random string), `ADMIN_ID`, `ADMIN_PASSWORD` and `STUDENT_CODE` (the access code students need to sign up). Use strong values, and never put them in the code.
+4. **Login settings (required):** `SESSION_SECRET` (a long random string), `ADMIN_ID`, and `ADMIN_PASSWORD`. Use strong values, and never put them in the code.
 
 Works on phones: tested at 375px with no sideways scrolling, 44px tap targets, and tables shown as cards.
 

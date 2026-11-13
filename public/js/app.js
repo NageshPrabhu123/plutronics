@@ -156,7 +156,7 @@
     $("#lgId").placeholder = lgRole === "admin" ? "Admin ID" : "you@college.edu";
     $("#lgPass").autocomplete = lgMode === "signup" ? "new-password" : "current-password";
     $("#lgPass").placeholder = lgMode === "signup" ? "At least 6 characters" : "";
-    $("#lgName").required = $("#lgCode").required = lgRole === "student" && lgMode === "signup";
+    $("#lgName").required = lgRole === "student" && lgMode === "signup";
     $("#lgSubmit").textContent = lgMode === "signup" && lgRole === "student" ? "Create account" : "Log in";
     $("#lgToggle").textContent = lgMode === "signup" ? "Already registered? Log in" : "New student? Sign up with your email";
   }
@@ -168,14 +168,14 @@
   const closeLogin = () => $("#loginModal").classList.add("hidden");
   async function submitLogin(e) {
     e.preventDefault();
-    const body = { action: lgRole === "student" && lgMode === "signup" ? "signup" : "login", role: lgRole, id: $("#lgId").value.trim(), password: $("#lgPass").value, name: $("#lgName").value.trim(), code: $("#lgCode").value.trim() };
+    const body = { action: lgRole === "student" && lgMode === "signup" ? "signup" : "login", role: lgRole, id: $("#lgId").value.trim(), password: $("#lgPass").value, name: $("#lgName").value.trim() };
     if (body.action === "signup" && body.password.length < 6) { $("#lgMsg").textContent = "Password must be at least 6 characters."; return; }
     $("#lgSubmit").disabled = true; $("#lgMsg").className = "lgmsg ok"; $("#lgMsg").textContent = body.action === "signup" ? "Creating your account…" : "Checking…";
     try {
       const j = await RL.api.auth(body);
       RL.session.set(j.token); ME = RL.session.get(); aiAvailable = null;
       if (P.regUser !== ME.id) { P.registered = ""; P.myRid = null; P.regUser = ME.id; saveP(); }
-      $("#lgPass").value = ""; $("#lgCode").value = ""; closeLogin(); renderUserChip();
+      $("#lgPass").value = ""; closeLogin(); renderUserChip();
       await refresh(); await setRole(isAdmin() ? "admin" : "student");
     } catch (er) { $("#lgMsg").className = "lgmsg"; $("#lgMsg").textContent = er.message; }
     $("#lgSubmit").disabled = false;
@@ -417,7 +417,7 @@
     const studs = DB.students || [];
     $("#studentTable").innerHTML = studs.length ? `<tr><th>Email</th><th>Name</th><th>Registered</th><th></th></tr>` + studs.map((s) => `<tr><td><b>${esc(s.email)}</b></td><td>${esc(s.name)}</td><td>${new Date(s.createdAt).toLocaleDateString()}</td><td><button data-delstu="${esc(s.email)}">Remove</button></td></tr>`).join("") : `<tr><td class="muted">No students have signed up yet.</td></tr>`;
     labelTable($("#studentTable"));
-    $$("[data-delstu]").forEach((b) => (b.onclick = async () => { if (confirm(`Remove student ${b.dataset.delstu}? Their account and rider registration are deleted; they can sign up again with the access code.`)) { try { await post({ action: "deleteStudent", email: b.dataset.delstu }); } catch (e) { alert(e.message); } } }));
+    $$("[data-delstu]").forEach((b) => (b.onclick = async () => { if (confirm(`Remove student ${b.dataset.delstu}? Their account and rider registration are deleted; they can sign up again.`)) { try { await post({ action: "deleteStudent", email: b.dataset.delstu }); } catch (e) { alert(e.message); } } }));
     const rows = Object.values(ROWS);
     $("#kpis").innerHTML = [[DB.routes.length, "registered routes"], [RL.TRIPS.length, "morning trips"], [DB.riders.length, "registered riders"], [DB.reports.length, "real reports (120 d)"], [todayReports().length, "reports today"], [rows.filter((r) => r.pred.p >= 0.6).length, "high-risk trips"]]
       .map(([b, s]) => `<div class="kpi"><b>${b}</b><span>${s}</span></div>`).join("");
